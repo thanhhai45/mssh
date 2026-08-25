@@ -3,16 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"mssh/internal/store"
 )
 
-// App struct
+// App is the bridge between the frontend and the Go packages that do the real
+// work. Methods here stay thin on purpose: logic lives in internal/.
 type App struct {
-	ctx context.Context
+	ctx   context.Context
+	store *store.Store
 }
 
 // NewApp creates a new App application struct
-func NewApp() *App {
-	return &App{}
+func NewApp(st *store.Store) *App {
+	return &App{store: st}
 }
 
 // startup is called when the app starts. The context is saved
