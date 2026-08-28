@@ -23,6 +23,8 @@ const schemaVersion = 1
 // talks to the database.
 type Store struct {
 	db *sql.DB
+
+	now func() int64
 }
 
 // DefaultPath returns the per-user database location, e.g.
@@ -59,7 +61,10 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("connect to database: %w", err)
 	}
 
-	s := &Store{db: db}
+	s := &Store{
+		db:  db,
+		now: func() int64 { return time.Now().Unix() },
+	}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -126,7 +131,7 @@ func (s *Store) seed() error {
 		return nil
 	}
 
-	now := time.Now().Unix()
+	now := s.now()
 	_, err := s.db.Exec(
 		`INSERT INTO workspaces (id, name, color, aws_profile, aws_region, sort_order, created_at, updated_at)
 		 VALUES (?, ?, ?, '', '', 0, ?, ?)`,

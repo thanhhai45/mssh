@@ -67,10 +67,15 @@ func TestGetWorkspaceNotFound(t *testing.T) {
 func TestUpdateWorkspace(t *testing.T) {
 	s := openTest(t)
 
+	clock := int64(1_000)
+	s.now = func() int64 { return clock }
+
 	created, err := s.CreateWorkspace(WorkspaceInput{Name: "Before", Color: "red"})
 	if err != nil {
 		t.Fatalf("CreateWorkspace failed: %v", err)
 	}
+
+	clock = 2_000
 
 	updated, err := s.UpdateWorkspace(created.ID, WorkspaceInput{
 		Name:       "After",
@@ -86,12 +91,14 @@ func TestUpdateWorkspace(t *testing.T) {
 		t.Errorf("update did not stick: %+v", updated)
 	}
 
-	if updated.CreatedAt != created.CreatedAt {
-		t.Errorf("CreatedAt changed on update: %d -> %d", created.CreatedAt, updated.CreatedAt)
+	if created.CreatedAt != 1_000 {
+		t.Errorf("CreatedAt = %d, want 1000", created.CreatedAt)
 	}
-
-	if updated.UpdatedAt == created.UpdatedAt {
-		t.Errorf("UpdatedAt did not change on update: %d -> %d", created.UpdatedAt, updated.UpdatedAt)
+	if updated.CreatedAt != 1_000 {
+		t.Errorf("CreatedAt changed on update: %d, want 1000", updated.CreatedAt)
+	}
+	if updated.UpdatedAt != 2_000 {
+		t.Errorf("UpdatedAt = %d, want 2000", updated.UpdatedAt)
 	}
 
 	if updated.SortOrder != created.SortOrder {

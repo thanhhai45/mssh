@@ -23,8 +23,8 @@ CREATE TABLE connections (
     -- chỉ dùng cho ssh và ssm-ssh
     port         INTEGER NOT NULL DEFAULT 22,
     username     TEXT NOT NULL DEFAULT '',
-    auth_method  TEXT NOT NULL DEFAULT 'agent'
-                 CHECK (auth_method IN ('agent', 'key')),
+    auth_method  TEXT NOT NULL DEFAULT ''
+                 CHECK (auth_method IN ('', 'agent', 'key')),
     key_path     TEXT NOT NULL DEFAULT '',
 
     -- chỉ dùng cho ssm và ssm-ssh;  '' = kế thừa workspace

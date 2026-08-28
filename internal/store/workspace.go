@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -93,7 +92,7 @@ func (s *Store) CreateWorkspace(input WorkspaceInput) (Workspace, error) {
 		color = "slate"
 	}
 
-	now := time.Now().Unix()
+	now := s.now()
 	ws := Workspace{
 		ID:         uuid.NewString(),
 		Name:       name,
@@ -134,7 +133,7 @@ func (s *Store) UpdateWorkspace(id string, input WorkspaceInput) (Workspace, err
 
 	res, err := s.db.Exec(
 		`UPDATE workspaces SET name = ?, color = ?, aws_profile = ?, aws_region = ?, updated_at = ? WHERE id = ?`,
-		name, color, strings.TrimSpace(input.AWSProfile), strings.TrimSpace(input.AWSRegion), time.Now().Unix(), id,
+		name, color, strings.TrimSpace(input.AWSProfile), strings.TrimSpace(input.AWSRegion), s.now(), id,
 	)
 
 	if err != nil {
@@ -184,7 +183,7 @@ func (s *Store) ReorderWorkspaces(ids []string) error {
 		return fmt.Errorf("prepare reorder: %w", err)
 	}
 	defer stmt.Close()
-	now := time.Now().Unix()
+	now := s.now()
 	for i, id := range ids {
 		if _, err := stmt.Exec(i, now, id); err != nil {
 			return fmt.Errorf("reorder workspace %s: %w", id, err)
