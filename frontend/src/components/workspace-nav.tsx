@@ -1,6 +1,7 @@
 import {useState, type SubmitEvent} from 'react'
 import {Link, useRouterState} from '@tanstack/react-router'
 import {ChevronRight, Plus, Server as ServerIcon} from 'lucide-react'
+import {api, describeConnection, errorMessage} from '@/lib/api'
 
 import {Button} from '@/components/ui/button'
 import {Collapsible, CollapsibleContent, CollapsibleTrigger} from '@/components/ui/collapsible'
@@ -29,14 +30,17 @@ import {useWorkspaces} from '@/lib/workspaces-store'
 
 export function WorkspaceNav() {
     const pathname = useRouterState({select: (s) => s.location.pathname})
-    const {workspaces, addServer} = useWorkspaces()
+    const {workspaces, connections, createConnection} = useWorkspaces()
     const [dialogWorkspaceId, setDialogWorkspaceId] = useState<string | null>(null)
     const [name, setName] = useState('')
     const [command, setCommand] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [formError, setFormError] = useState<string | null>(null)
 
     function resetForm() {
         setName('')
         setCommand('')
+        setFormError(null)
     }
 
     function handleOpenChange(open: boolean) {
@@ -46,12 +50,34 @@ export function WorkspaceNav() {
         }
     }
 
-    function handleSubmit(event: SubmitEvent) {
+    async function handleSubmit(event: SubmitEvent) {
         event.preventDefault()
-        if (!dialogWorkspaceId || !name.trim() || !command.trim()) return
-        addServer(dialogWorkspaceId, {name: name.trim(), command: command.trim()})
-        setDialogWorkspaceId(null)
-        resetForm()
+        if (!dialogWorkspaceId) return
+
+        setSaving(true)
+        setFormError(null)
+        try {
+            const parsed = await api.parseSSHCommand(command)
+            await createConnection(dialogWorkspaceId, {
+                name: name.trim(),
+                kind: 'ssh',
+                target: parsed.host,
+                port: parsed.port,
+                username: parsed.username,
+                authMethod: parsed.keyPath ? 'key' : 'agent',
+                keyPath: parsed.keyPath,
+                awsProfile: '',
+                awsRegion: '',
+                extra: '',
+                color: '',
+            })
+            setDialogWorkspaceId(null)
+            resetForm()
+        } catch (err) {
+            setFormError(errorMessage(err))
+        } finally {
+            setSaving(false)
+        }
     }
 
     return (
@@ -61,6 +87,7 @@ export function WorkspaceNav() {
                 {workspaces.map((workspace) => {
                     const groupPath = `/workspaces/${workspace.id}`
                     const isActiveGroup = pathname.startsWith(groupPath)
+                    const list = connections[workspace.id] ?? []
 
                     return (
                         <Collapsible
@@ -73,18 +100,18 @@ export function WorkspaceNav() {
                                     <SidebarMenuButton tooltip={workspace.name}>
                                         <ServerIcon/>
                                         <span className="flex-1 truncate">{workspace.name}</span>
-                                        {workspace.status === 'connected' && (
-                                            <span className="size-1.5 shrink-0 rounded-full bg-emerald-500"/>
-                                        )}
+                                        <span className="shrink-0 text-xs text-muted-foreground">
+                                            {(connections[workspace.id] ?? []).length}
+                                        </span>
                                         <ChevronRight className="transition-transform group-data-[state=open]/collapsible:rotate-90"/>
                                     </SidebarMenuButton>
                                 </CollapsibleTrigger>
                                 <CollapsibleContent>
                                     <SidebarMenuSub>
-                                        {workspace.servers.map((server) => {
-                                            const to = `${groupPath}/servers/${server.id}`
+                                        {list.map((connection: any) => {
+                                            const to = `${groupPath}/servers/${connection.id}`
                                             return (
-                                                <SidebarMenuSubItem key={server.id}>
+                                                <SidebarMenuSubItem key={connection.id}>
                                                     <SidebarMenuSubButton
                                                         asChild
                                                         isActive={pathname === to}
@@ -92,9 +119,9 @@ export function WorkspaceNav() {
                                                     >
                                                         <Link to={to}>
                                                             <div className="flex min-w-0 flex-col leading-tight">
-                                                                <span className="truncate">{server.name}</span>
+                                                                <span className="truncate">{connection.name}</span>
                                                                 <span className="truncate text-xs text-muted-foreground">
-                                                                    {server.command}
+                                                                    {describeConnection(connection)}
                                                                 </span>
                                                             </div>
                                                         </Link>
@@ -102,7 +129,7 @@ export function WorkspaceNav() {
                                                 </SidebarMenuSubItem>
                                             )
                                         })}
-                                        {workspace.servers.length === 0 && (
+                                        {list.length === 0 && (
                                             <SidebarMenuSubItem>
                                                 <span className="block px-2 py-1.5 text-xs text-muted-foreground">
                                                     No servers yet
@@ -158,13 +185,14 @@ export function WorkspaceNav() {
                             </div>
                         </div>
                         <DialogFooter>
+                            {formError && (
+                                <p className="mr-auto text-sm text-destructive">{formError}</p>
+                            )}
                             <DialogClose asChild>
-                                <Button type="button" variant="outline">
-                                    Cancel
-                                </Button>
+                                <Button type="button" variant="outline">Cancel</Button>
                             </DialogClose>
-                            <Button type="submit" disabled={!name.trim() || !command.trim()}>
-                                Add server
+                            <Button type="submit" disabled={saving || !name.trim() || !command.trim()}>
+                                {saving ? 'Adding…' : 'Add server'}
                             </Button>
                         </DialogFooter>
                     </form>
