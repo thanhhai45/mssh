@@ -180,7 +180,7 @@ export function WorkspaceNav() {
 
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <SidebarMenuAction showOnHover className="right-7">
+                                        <SidebarMenuAction showOnHover>
                                             <MoreHorizontal/>
                                             <span className="sr-only">Workspace actions</span>
                                         </SidebarMenuAction>

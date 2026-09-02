@@ -47,12 +47,20 @@ func TestOpenCreatesSchema(t *testing.T) {
 		}
 	}
 
+	// The latest migration number is now the schema version, so read it from
+	// the migration set rather than from a constant.
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	want := migrations[len(migrations)-1].version
+
 	var version int
 	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("read user_version: %v", err)
 	}
-	if version != schemaVersion {
-		t.Errorf("user_version = %d, want %d", version, schemaVersion)
+	if version != want {
+		t.Errorf("user_version = %d, want %d (the latest migration)", version, want)
 	}
 }
 
