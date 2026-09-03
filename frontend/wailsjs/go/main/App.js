@@ -14,6 +14,10 @@ export function DeleteConnection(arg1) {
   return window['go']['main']['App']['DeleteConnection'](arg1);
 }
 
+export function DeleteConnectionPassword(arg1) {
+  return window['go']['main']['App']['DeleteConnectionPassword'](arg1);
+}
+
 export function DeleteWorkspace(arg1) {
   return window['go']['main']['App']['DeleteWorkspace'](arg1);
 }
@@ -24,6 +28,10 @@ export function GetConnection(arg1) {
 
 export function GetWorkspace(arg1) {
   return window['go']['main']['App']['GetWorkspace'](arg1);
+}
+
+export function HasConnectionPassword(arg1) {
+  return window['go']['main']['App']['HasConnectionPassword'](arg1);
 }
 
 export function ListConnections(arg1) {
@@ -48,6 +56,10 @@ export function ReorderWorkspaces(arg1) {
 
 export function ResolveAWSForConnection(arg1) {
   return window['go']['main']['App']['ResolveAWSForConnection'](arg1);
+}
+
+export function SetConnectionPassword(arg1, arg2) {
+  return window['go']['main']['App']['SetConnectionPassword'](arg1, arg2);
 }
 
 export function UpdateConnection(arg1, arg2) {

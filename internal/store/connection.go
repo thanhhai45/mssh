@@ -22,8 +22,9 @@ const (
 type AuthMethod string
 
 const (
-	AuthAgent AuthMethod = "agent"
-	AuthKey   AuthMethod = "key"
+	AuthAgent    AuthMethod = "agent"
+	AuthKey      AuthMethod = "key"
+	AuthPassword AuthMethod = "password"
 )
 
 func (k ConnectionKind) Valid() bool {
@@ -41,6 +42,12 @@ func (k ConnectionKind) UsesSSH() bool {
 
 func (k ConnectionKind) UsesAWS() bool {
 	return k == KindSSM || k == KindSSMSSH
+}
+
+// NeedsPassword reports whether opening a session for this connection requires
+// a password, from the keychain or from the user.
+func (c Connection) NeedsPassword() bool {
+	return c.Kind.UsesSSH() && c.AuthMethod == AuthPassword
 }
 
 type Connection struct {
@@ -112,7 +119,6 @@ func (input ConnectionInput) normalize() (ConnectionInput, error) {
 		if out.Port == 0 {
 			out.Port = 22
 		}
-
 		if out.Port < 1 || out.Port > 65535 {
 			return out, fmt.Errorf("connection port %d must be between 1 and 65535", out.Port)
 		}
@@ -122,11 +128,21 @@ func (input ConnectionInput) normalize() (ConnectionInput, error) {
 		if out.AuthMethod == "" {
 			out.AuthMethod = AuthAgent
 		}
-		if out.AuthMethod != AuthAgent && out.AuthMethod != AuthKey {
+
+		switch out.AuthMethod {
+		case AuthAgent:
+			// Nothing else to check: ssh-agent either has a usable key or it
+			// does not, and that only shows up at connect time.
+			out.KeyPath = ""
+		case AuthKey:
+			if out.KeyPath == "" {
+				return out, fmt.Errorf("key authentication needs a key path")
+			}
+		case AuthPassword:
+			// The password itself is never stored here. Nothing to validate.
+			out.KeyPath = ""
+		default:
 			return out, fmt.Errorf("unknown auth method %q", out.AuthMethod)
-		}
-		if out.AuthMethod == AuthKey && out.KeyPath == "" {
-			return out, fmt.Errorf("key authentication needs a key path")
 		}
 	} else {
 		// Not an SSH kind: keep the row honest instead of storing values that

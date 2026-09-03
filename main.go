@@ -8,6 +8,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 
+	"mssh/internal/secrets"
 	"mssh/internal/store"
 )
 
@@ -31,7 +32,7 @@ func main() {
 	log.Printf("mssh: database at %s", dbPath)
 
 	// Create an instance of the app structure
-	app := NewApp(st)
+	app := NewApp(st, secrets.NewKeyring())
 
 	// Create application with options
 	err = wails.Run(&options.App{

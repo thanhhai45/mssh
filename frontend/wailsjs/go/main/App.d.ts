@@ -8,11 +8,15 @@ export function CreateWorkspace(arg1:store.WorkspaceInput):Promise<store.Workspa
 
 export function DeleteConnection(arg1:string):Promise<void>;
 
+export function DeleteConnectionPassword(arg1:string):Promise<void>;
+
 export function DeleteWorkspace(arg1:string):Promise<void>;
 
 export function GetConnection(arg1:string):Promise<store.Connection>;
 
 export function GetWorkspace(arg1:string):Promise<store.Workspace>;
+
+export function HasConnectionPassword(arg1:string):Promise<boolean>;
 
 export function ListConnections(arg1:string):Promise<Array<store.Connection>>;
 
@@ -25,6 +29,8 @@ export function ParseSSHCommand(arg1:string):Promise<store.ParsedSSHCommand>;
 export function ReorderWorkspaces(arg1:Array<string>):Promise<void>;
 
 export function ResolveAWSForConnection(arg1:string):Promise<store.ResolvedAWS>;
+
+export function SetConnectionPassword(arg1:string,arg2:string):Promise<void>;
 
 export function UpdateConnection(arg1:string,arg2:store.ConnectionInput):Promise<store.Connection>;
 
