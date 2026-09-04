@@ -1,7 +1,8 @@
 import {useState} from 'react'
 import {Link, useNavigate, useRouterState} from '@tanstack/react-router'
-import {ChevronRight, MoreHorizontal, Pencil, Plus, Server as ServerIcon, Trash2} from 'lucide-react'
+import {ChevronRight, Copy, MoreHorizontal, Pencil, Plus, Server as ServerIcon, Trash2} from 'lucide-react'
 
+import {ConnectionDialog} from '@/components/connection-dialog'
 import {WorkspaceDialog} from '@/components/workspace-dialog'
 import {
     AlertDialog,
@@ -13,17 +14,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {Button} from '@/components/ui/button'
 import {Collapsible, CollapsibleContent, CollapsibleTrigger} from '@/components/ui/collapsible'
-import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -31,8 +22,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {Input} from '@/components/ui/input'
-import {Label} from '@/components/ui/label'
 import {
     SidebarGroup,
     SidebarGroupLabel,
@@ -44,101 +33,74 @@ import {
     SidebarMenuSubButton,
     SidebarMenuSubItem,
 } from '@/components/ui/sidebar'
-import {api, describeConnection, errorMessage, type Workspace} from '@/lib/api'
+import {
+    describeConnection,
+    errorMessage,
+    toConnectionInput,
+    type Connection,
+    type Workspace,
+} from '@/lib/api'
 import {swatchClass} from '@/lib/colors'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
 
+/** What the confirmation dialog is currently asking about. */
+type PendingDelete =
+    | {type: 'workspace'; workspace: Workspace}
+    | {type: 'connection'; connection: Connection}
+
 export function WorkspaceNav() {
     const pathname = useRouterState({select: (s) => s.location.pathname})
     const navigate = useNavigate()
-    const {workspaces, connections, createConnection, deleteWorkspace} = useWorkspaces()
+    const {workspaces, connections, createConnection, deleteWorkspace, deleteConnection} =
+        useWorkspaces()
 
-    // "New server" dialog: holds the workspace the new connection belongs to.
-    const [dialogWorkspaceId, setDialogWorkspaceId] = useState<string | null>(null)
-    const [name, setName] = useState('')
-    const [command, setCommand] = useState('')
-    const [saving, setSaving] = useState(false)
-    const [formError, setFormError] = useState<string | null>(null)
+    // Both dialogs are mounted only while open, so they never hold stale state.
+    const [workspaceDialog, setWorkspaceDialog] = useState<Workspace | null | undefined>(undefined)
+    const [connectionDialog, setConnectionDialog] = useState<{
+        workspace: Workspace
+        connection: Connection | null
+    } | null>(null)
 
-    // Workspace dialog: mounted only while open, so it never has stale state.
-    const [editing, setEditing] = useState<Workspace | null>(null)
-    const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false)
-
-    // Delete confirmation.
-    const [deleting, setDeleting] = useState<Workspace | null>(null)
+    const [pending, setPending] = useState<PendingDelete | null>(null)
     const [deleteBusy, setDeleteBusy] = useState(false)
     const [deleteError, setDeleteError] = useState<string | null>(null)
 
-    function openCreateWorkspace() {
-        setEditing(null)
-        setWorkspaceDialogOpen(true)
-    }
-
-    function openEditWorkspace(workspace: Workspace) {
-        setEditing(workspace)
-        setWorkspaceDialogOpen(true)
-    }
-
-    function resetForm() {
-        setName('')
-        setCommand('')
-        setFormError(null)
-    }
-
-    function handleOpenChange(open: boolean) {
-        if (!open) {
-            setDialogWorkspaceId(null)
-            resetForm()
-        }
-    }
-
-    async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-        event.preventDefault()
-        if (!dialogWorkspaceId) return
-
-        setSaving(true)
-        setFormError(null)
+    async function duplicateConnection(workspace: Workspace, connection: Connection) {
         try {
-            const parsed = await api.parseSSHCommand(command)
-            await createConnection(dialogWorkspaceId, {
-                name: name.trim(),
-                kind: 'ssh',
-                target: parsed.host,
-                port: parsed.port,
-                username: parsed.username,
-                authMethod: parsed.keyPath ? 'key' : 'agent',
-                keyPath: parsed.keyPath,
-                awsProfile: '',
-                awsRegion: '',
-                extra: '',
-                color: '',
+            await createConnection(workspace.id, {
+                ...toConnectionInput(connection),
+                name: `${connection.name} copy`,
             })
-            setDialogWorkspaceId(null)
-            resetForm()
         } catch (err) {
-            setFormError(errorMessage(err))
-        } finally {
-            setSaving(false)
+            // Nothing is open to show this in, so surface it the blunt way.
+            window.alert(errorMessage(err))
         }
     }
 
     async function handleDelete() {
-        if (!deleting) return
+        if (!pending) return
 
         setDeleteBusy(true)
         setDeleteError(null)
         try {
-            // Read this before the delete: afterwards the workspace is gone and
-            // the route would point at nothing.
-            const wasViewing = pathname.startsWith(`/workspaces/${deleting.id}`)
+            // Read this before deleting: afterwards the route points at nothing.
+            const viewedPath =
+                pending.type === 'workspace'
+                    ? `/workspaces/${pending.workspace.id}`
+                    : `/workspaces/${pending.connection.workspaceId}/servers/${pending.connection.id}`
+            const wasViewing = pathname.startsWith(viewedPath)
 
-            await deleteWorkspace(deleting.id)
+            if (pending.type === 'workspace') {
+                await deleteWorkspace(pending.workspace.id)
+            } else {
+                await deleteConnection(pending.connection.id)
+            }
 
             if (wasViewing) {
                 await navigate({to: '/'})
             }
-            setDeleting(null)
+            setPending(null)
         } catch (err) {
             setDeleteError(errorMessage(err))
         } finally {
@@ -146,7 +108,8 @@ export function WorkspaceNav() {
         }
     }
 
-    const deletingCount = deleting ? (connections[deleting.id] ?? []).length : 0
+    const pendingCount =
+        pending?.type === 'workspace' ? (connections[pending.workspace.id] ?? []).length : 0
 
     return (
         <SidebarGroup>
@@ -186,20 +149,26 @@ export function WorkspaceNav() {
                                         </SidebarMenuAction>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent side="right" align="start" className="w-44">
-                                        <DropdownMenuItem onClick={() => openEditWorkspace(workspace)}>
+                                        <DropdownMenuItem
+                                            onClick={() => setConnectionDialog({workspace, connection: null})}
+                                        >
+                                            <Plus/>
+                                            <span>New connection</span>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => setWorkspaceDialog(workspace)}>
                                             <Pencil/>
-                                            <span>Edit</span>
+                                            <span>Edit workspace</span>
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator/>
                                         <DropdownMenuItem
                                             variant="destructive"
                                             onClick={() => {
                                                 setDeleteError(null)
-                                                setDeleting(workspace)
+                                                setPending({type: 'workspace', workspace})
                                             }}
                                         >
                                             <Trash2/>
-                                            <span>Delete</span>
+                                            <span>Delete workspace</span>
                                         </DropdownMenuItem>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
@@ -209,11 +178,14 @@ export function WorkspaceNav() {
                                         {list.map((connection) => {
                                             const to = `${groupPath}/servers/${connection.id}`
                                             return (
-                                                <SidebarMenuSubItem key={connection.id}>
+                                                <SidebarMenuSubItem
+                                                    key={connection.id}
+                                                    className="group/conn relative"
+                                                >
                                                     <SidebarMenuSubButton
                                                         asChild
                                                         isActive={pathname === to}
-                                                        className="h-auto py-1.5"
+                                                        className="h-auto py-1.5 pr-8"
                                                     >
                                                         <Link to={to}>
                                                             <div className="flex min-w-0 flex-col leading-tight">
@@ -226,6 +198,53 @@ export function WorkspaceNav() {
                                                             </div>
                                                         </Link>
                                                     </SidebarMenuSubButton>
+
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <button
+                                                                type="button"
+                                                                className="absolute right-1 top-2 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-sidebar-accent focus-visible:opacity-100 group-hover/conn:opacity-100"
+                                                            >
+                                                                <MoreHorizontal className="size-3.5"/>
+                                                                <span className="sr-only">
+                                                                    Connection actions
+                                                                </span>
+                                                            </button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent
+                                                            side="right"
+                                                            align="start"
+                                                            className="w-40"
+                                                        >
+                                                            <DropdownMenuItem
+                                                                onClick={() =>
+                                                                    setConnectionDialog({workspace, connection})
+                                                                }
+                                                            >
+                                                                <Pencil/>
+                                                                <span>Edit</span>
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                onClick={() =>
+                                                                    duplicateConnection(workspace, connection)
+                                                                }
+                                                            >
+                                                                <Copy/>
+                                                                <span>Duplicate</span>
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuSeparator/>
+                                                            <DropdownMenuItem
+                                                                variant="destructive"
+                                                                onClick={() => {
+                                                                    setDeleteError(null)
+                                                                    setPending({type: 'connection', connection})
+                                                                }}
+                                                            >
+                                                                <Trash2/>
+                                                                <span>Delete</span>
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
                                                 </SidebarMenuSubItem>
                                             )
                                         })}
@@ -233,7 +252,7 @@ export function WorkspaceNav() {
                                         {list.length === 0 && (
                                             <SidebarMenuSubItem>
                                                 <span className="block px-2 py-1.5 text-xs text-muted-foreground">
-                                                    No servers yet
+                                                    No connections yet
                                                 </span>
                                             </SidebarMenuSubItem>
                                         )}
@@ -241,11 +260,13 @@ export function WorkspaceNav() {
                                         <SidebarMenuSubItem>
                                             <button
                                                 type="button"
-                                                onClick={() => setDialogWorkspaceId(workspace.id)}
+                                                onClick={() =>
+                                                    setConnectionDialog({workspace, connection: null})
+                                                }
                                                 className="flex h-7 w-full min-w-0 -translate-x-px items-center gap-2 rounded-md px-2 text-xs text-muted-foreground outline-hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                                             >
                                                 <Plus className="size-3.5 shrink-0"/>
-                                                <span>New server</span>
+                                                <span>New connection</span>
                                             </button>
                                         </SidebarMenuSubItem>
                                     </SidebarMenuSub>
@@ -257,7 +278,7 @@ export function WorkspaceNav() {
 
                 <SidebarMenuItem>
                     <SidebarMenuButton
-                        onClick={openCreateWorkspace}
+                        onClick={() => setWorkspaceDialog(null)}
                         tooltip="New workspace"
                         className="text-muted-foreground"
                     >
@@ -267,75 +288,42 @@ export function WorkspaceNav() {
                 </SidebarMenuItem>
             </SidebarMenu>
 
-            <Dialog open={dialogWorkspaceId !== null} onOpenChange={handleOpenChange}>
-                <DialogContent>
-                    <form onSubmit={handleSubmit}>
-                        <DialogHeader>
-                            <DialogTitle>New server</DialogTitle>
-                            <DialogDescription>
-                                Add a server you connect to over SSH within this workspace.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="server-name">Name</Label>
-                                <Input
-                                    id="server-name"
-                                    value={name}
-                                    onChange={(event) => setName(event.target.value)}
-                                    placeholder="web-1"
-                                    autoFocus
-                                />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="server-command">SSH command</Label>
-                                <Input
-                                    id="server-command"
-                                    value={command}
-                                    onChange={(event) => setCommand(event.target.value)}
-                                    placeholder="ssh user@10.0.0.10 -p 22"
-                                />
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            {formError && (
-                                <p className="mr-auto text-sm text-destructive">{formError}</p>
-                            )}
-                            <DialogClose asChild>
-                                <Button type="button" variant="outline">Cancel</Button>
-                            </DialogClose>
-                            <Button type="submit" disabled={saving || !name.trim() || !command.trim()}>
-                                {saving ? 'Adding…' : 'Add server'}
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
-
-            {workspaceDialogOpen && (
+            {workspaceDialog !== undefined && (
                 <WorkspaceDialog
-                    workspace={editing}
-                    onClose={() => setWorkspaceDialogOpen(false)}
+                    workspace={workspaceDialog}
+                    onClose={() => setWorkspaceDialog(undefined)}
+                />
+            )}
+
+            {connectionDialog && (
+                <ConnectionDialog
+                    workspace={connectionDialog.workspace}
+                    connection={connectionDialog.connection}
+                    onClose={() => setConnectionDialog(null)}
                 />
             )}
 
             <AlertDialog
-                open={deleting !== null}
-                onOpenChange={(open) => !open && setDeleting(null)}
+                open={pending !== null}
+                onOpenChange={(open) => !open && setPending(null)}
             >
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Delete “{deleting?.name}”?</AlertDialogTitle>
+                        <AlertDialogTitle>
+                            {pending?.type === 'workspace'
+                                ? `Delete “${pending.workspace.name}”?`
+                                : `Delete “${pending?.connection.name}”?`}
+                        </AlertDialogTitle>
                         <AlertDialogDescription>
-                            {deletingCount === 0
-                                ? 'This workspace has no connections.'
-                                : `Its ${deletingCount} connection${deletingCount === 1 ? '' : 's'} will be deleted too.`}
-                            {' '}This cannot be undone.
+                            {pending?.type === 'workspace'
+                                ? pendingCount === 0
+                                    ? 'This workspace has no connections. '
+                                    : `Its ${pendingCount} connection${pendingCount === 1 ? '' : 's'} will be deleted too, along with any saved passwords. `
+                                : 'Any password saved for it will be removed from your keychain too. '}
+                            This cannot be undone.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
-                    {deleteError && (
-                        <p className="text-sm text-destructive">{deleteError}</p>
-                    )}
+                    {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
                     <AlertDialogFooter>
                         <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
                         <AlertDialogAction
