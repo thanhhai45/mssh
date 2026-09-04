@@ -1,0 +1,211 @@
+package transport
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/crypto/ssh"
+)
+
+// defaultSSHDocument is the SSM document that turns a session into a plain
+// byte pipe suitable for carrying SSH, instead of an interactive shell.
+const defaultSSHDocument = "AWS-StartSSHSession"
+
+// ssmSSHDialer runs a real SSH handshake through an SSM tunnel, so the session
+// lands as the user's own account rather than ssm-user, and scp keeps working.
+type ssmSSHDialer struct{}
+
+var _ Dialer = ssmSSHDialer{}
+
+func (ssmSSHDialer) Name() string { return "SSH over SSM" }
+
+func (ssmSSHDialer) Preflight(config Config) error {
+	if config.Target == "" {
+		return fmt.Errorf("this connection has no instance id")
+	}
+	if err := requireAWSTools(); err != nil {
+		return err
+	}
+	if err := checkAWSCredentials(config.AWSProfile, config.AWSRegion); err != nil {
+		return err
+	}
+	// The SSH half has its own requirements: a username, and usable
+	// credentials. Reusing the ssh dialer's checks keeps them in one place.
+	return sshDialer{}.Preflight(config)
+}
+
+func (ssmSSHDialer) Dial(
+	dialContext context.Context,
+	config Config,
+	size Size,
+	onOutput func([]byte),
+	onExit func(error),
+) (Session, error) {
+	tunnel, err := startSSMTunnel(dialContext, config)
+	if err != nil {
+		return nil, err
+	}
+
+	authMethods, releaseAuth, err := sshAuthMethods(config)
+	if err != nil {
+		tunnel.Close()
+		return nil, err
+	}
+	defer releaseAuth()
+
+	hostKeyCallback, err := hostKeyCallbackFor(config.KnownHostsPath)
+	if err != nil {
+		tunnel.Close()
+		return nil, err
+	}
+
+	clientConfig := &ssh.ClientConfig{
+		User:            config.Username,
+		Auth:            authMethods,
+		HostKeyCallback: hostKeyCallback,
+		Timeout:         30 * time.Second,
+	}
+
+	// The instance id is what ssh sees as the host name here, so that is the
+	// name known_hosts is searched for.
+	sshConnection, channels, requests, err := ssh.NewClientConn(
+		tunnel, config.Target, clientConfig)
+	if err != nil {
+		// If the tunnel itself failed, AWS said why on stderr. That is far more
+		// useful than "handshake failed: EOF".
+		awsComplaint := strings.TrimSpace(tunnel.problems.string())
+		tunnel.Close()
+
+		if awsComplaint != "" {
+			return nil, fmt.Errorf("SSM tunnel to %s: %s",
+				config.Target, explainSSMFailure(config.Target, awsComplaint))
+		}
+		return nil, fmt.Errorf("ssh handshake through the SSM tunnel to %s: %w",
+			config.Target, err)
+	}
+
+	return startShell(ssh.NewClient(sshConnection, channels, requests), size, onOutput, onExit)
+}
+
+// tunnelOptions are the rarely-changed settings kept in the connection's extra
+// JSON rather than given a column of their own.
+type tunnelOptions struct {
+	DocumentName string `json:"documentName"`
+}
+
+// startSSMTunnel launches `aws ssm start-session` as a pure byte pipe.
+func startSSMTunnel(dialContext context.Context, config Config) (*processConn, error) {
+	portNumber := config.Port
+	if portNumber == 0 {
+		portNumber = 22
+	}
+
+	documentName := defaultSSHDocument
+	if config.Extra != "" {
+		var options tunnelOptions
+		// A malformed extra should not stop a connection: fall back to the
+		// default rather than failing on something the user cannot see.
+		if err := json.Unmarshal([]byte(config.Extra), &options); err == nil {
+			if options.DocumentName != "" {
+				documentName = options.DocumentName
+			}
+		}
+	}
+
+	arguments := append([]string{
+		"ssm", "start-session",
+		"--target", config.Target,
+		"--document-name", documentName,
+		"--parameters", fmt.Sprintf("portNumber=%d", portNumber),
+	}, awsFlags(config.AWSProfile, config.AWSRegion)...)
+
+	command := exec.CommandContext(dialContext, "aws", arguments...)
+	command.Env = os.Environ()
+
+	// No pty here, unlike the plain ssm kind. This process is carrying the SSH
+	// wire protocol, and a terminal would translate newlines and interpret
+	// control characters — corrupting it.
+	writer, err := command.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("attach tunnel stdin: %w", err)
+	}
+	reader, err := command.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("attach tunnel stdout: %w", err)
+	}
+
+	// stderr is kept separate on purpose: it carries AWS's error messages, and
+	// must never reach the SSH byte stream.
+	problems := &tailBuffer{limit: 4096}
+	command.Stderr = problems
+
+	if err := command.Start(); err != nil {
+		return nil, fmt.Errorf("start the SSM tunnel: %w", err)
+	}
+
+	return &processConn{
+		command:  command,
+		writer:   writer,
+		reader:   reader,
+		problems: problems,
+	}, nil
+}
+
+// processConn presents a child process's stdin and stdout as a net.Conn, so an
+// SSH handshake can run over them. It is the Go equivalent of ssh's
+// ProxyCommand.
+type processConn struct {
+	command  *exec.Cmd
+	writer   io.WriteCloser
+	reader   io.ReadCloser
+	problems *tailBuffer
+
+	closeOnce sync.Once
+}
+
+func (connection *processConn) Read(payload []byte) (int, error) {
+	return connection.reader.Read(payload)
+}
+
+func (connection *processConn) Write(payload []byte) (int, error) {
+	return connection.writer.Write(payload)
+}
+
+func (connection *processConn) Close() error {
+	var closeErr error
+	connection.closeOnce.Do(func() {
+		connection.writer.Close()
+		connection.reader.Close()
+		if connection.command.Process != nil {
+			connection.command.Process.Kill()
+		}
+		// Wait reaps the process and waits for the goroutine copying stderr.
+		closeErr = connection.command.Wait()
+	})
+	return closeErr
+}
+
+// The rest of net.Conn has no meaning for a pair of pipes. Satisfying an
+// interface does not oblige every method to do something.
+func (connection *processConn) LocalAddr() net.Addr  { return tunnelAddr{} }
+func (connection *processConn) RemoteAddr() net.Addr { return tunnelAddr{} }
+
+// Deadlines are accepted and ignored. Reporting an error instead would abort
+// handshakes that only wanted a timeout they can live without; the tunnel
+// process dying is what actually ends a stuck connection.
+func (connection *processConn) SetDeadline(time.Time) error      { return nil }
+func (connection *processConn) SetReadDeadline(time.Time) error  { return nil }
+func (connection *processConn) SetWriteDeadline(time.Time) error { return nil }
+
+type tunnelAddr struct{}
+
+func (tunnelAddr) Network() string { return "ssm" }
+func (tunnelAddr) String() string  { return "aws-ssm-tunnel" }

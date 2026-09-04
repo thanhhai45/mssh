@@ -38,6 +38,9 @@ type Config struct {
 	Password   string
 	AWSProfile string
 	AWSRegion  string
+	// Extra carries rarely-used options as JSON, straight from the
+	// connection's extra column. Nothing here is ever queried or validated.
+	Extra string
 	// KnownHostsPath is where host keys are verified against. Empty means
 	// ~/.ssh/known_hosts.
 	KnownHostsPath string
@@ -73,7 +76,7 @@ func For(kind string) (Dialer, error) {
 	case KindSSM:
 		return ssmDialer{}, nil
 	case KindSSMSSH:
-		return nil, fmt.Errorf("connection kind %q is not implemented yet", kind)
+		return ssmSSHDialer{}, nil
 	default:
 		return nil, fmt.Errorf("unknown connection kind %q", kind)
 	}

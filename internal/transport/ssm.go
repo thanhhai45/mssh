@@ -140,3 +140,8 @@ func (buffer *tailBuffer) string() string {
 	defer buffer.mutex.Unlock()
 	return string(buffer.data)
 }
+
+func (buffer *tailBuffer) Write(chunk []byte) (int, error) {
+	buffer.append(chunk)
+	return len(chunk), nil
+}

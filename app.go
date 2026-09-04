@@ -191,6 +191,7 @@ func (app *App) ConnectSession(
 		Password:   password,
 		AWSProfile: resolvedAWS.Profile,
 		AWSRegion:  resolvedAWS.Region,
+		Extra:      connection.Extra,
 	}
 
 	app.emitSessionStatus(connectionID, "connecting", "")
