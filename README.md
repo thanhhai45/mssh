@@ -10,6 +10,26 @@ application database.
 
 ---
 
+## Install
+
+### Download a build
+
+Grab the latest `mssh-<version>-macos-universal.zip` from the
+[Releases page](https://github.com/thanhhai45/mssh/releases), unzip it, and drag
+`mssh.app` into `/Applications`.
+
+**macOS will refuse to open it the first time.** The app is not signed with an
+Apple Developer certificate, so Gatekeeper blocks it:
+
+> "mssh" cannot be opened because Apple cannot check it for malicious software.
+
+Clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/mssh.app
+```
+---
+```
 ## Features
 
 - **Workspaces** — group connections by account, environment or customer, each

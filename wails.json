@@ -9,5 +9,12 @@
   "author": {
     "name": "thanhhai45",
     "email": "thanhhai82451495@gmail.com"
+  },
+  "info": {
+    "companyName": "HaNo",
+    "productName": "mssh",
+    "productVersion": "0.1.0",
+    "copyright": "@ 2026 HaNo",
+    "comments": "SSH and AWS SSM workspace manager"
   }
 }
