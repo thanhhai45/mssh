@@ -8,7 +8,7 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-go@v5
         with:
@@ -16,16 +16,23 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Test
-        run: go test ./...
+        # Not ./... — package main cannot compile until wails build has created
+        # frontend/dist, which go:embed needs. Every test lives under internal/.
+        run: go test ./internal/...
 
       - name: Build
         run: wails build -platform darwin/universal -clean
+      
+      - name: Verify the binary is universal
+        run: |
+          lipo -info build/bin/mssh.app/Contents/MacOS/mssh | grep -q "x86_64 arm64" \
+            || { echo "not a universal binary"; exit 1; }
 
       - name: Package
         run: |
