@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -131,4 +133,29 @@ func (session *sshSession) Close() error {
 		closeErr = session.client.Close()
 	})
 	return closeErr
+}
+
+// handshake runs the client handshake under a deadline.
+//
+// ClientConfig.Timeout only applies to ssh.Dial, which we do not use, so
+// without this a hung peer blocks forever.
+func handshake(
+	connection net.Conn,
+	address string,
+	clientConfig *ssh.ClientConfig,
+	limit time.Duration,
+) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
+	// A conn that cannot take a deadline simply goes without one.
+	_ = connection.SetDeadline(time.Now().Add(limit))
+
+	sshConnection, channels, requests, err := ssh.NewClientConn(connection, address, clientConfig)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Clear it. The session is long-lived, and a deadline left in place would
+	// kill it the moment it expires.
+	_ = connection.SetDeadline(time.Time{})
+
+	return sshConnection, channels, requests, nil
 }

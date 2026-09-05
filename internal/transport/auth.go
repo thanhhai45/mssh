@@ -124,19 +124,24 @@ func hostKeyCallbackFor(knownHostsPath string) (ssh.HostKeyCallback, error) {
 			return err
 		}
 
+		displayHost := hostname
+		if host, _, splitErr := net.SplitHostPort(hostname); splitErr == nil {
+			displayHost = host
+		}
+
 		if len(keyError.Want) == 0 {
 			return fmt.Errorf(
 				"%s has never been connected to from this machine. Run "+
 					"`ssh %s` once, check the fingerprint it shows, and accept "+
 					"it — that records the key in %s, which mssh reads too",
-				hostname, hostname, knownHostsPath)
+				displayHost, displayHost, knownHostsPath)
 		}
 
 		return fmt.Errorf(
 			"the host key for %s has CHANGED since it was recoreded. Either the "+
 				"server was rebuilt, or something is intercepting this "+
 				"connection. Check with whoever runs it before removing the old "+
-				"entry with `ssh-keygen -R %s`", hostname, hostname)
+				"entry with `ssh-keygen -R %s`", displayHost, displayHost)
 	}, nil
 }
 

@@ -74,7 +74,8 @@ func (sshDialer) Dial(
 		return nil, fmt.Errorf("reach %s: %w", address, err)
 	}
 
-	sshConnection, channels, requests, err := ssh.NewClientConn(tcpConnection, address, clientConfig)
+	sshConnection, channels, requests, err := handshake(
+		tcpConnection, address, clientConfig, 15*time.Second)
 	if err != nil {
 		tcpConnection.Close()
 		return nil, fmt.Errorf("ssh handshake with %s: %w", address, err)

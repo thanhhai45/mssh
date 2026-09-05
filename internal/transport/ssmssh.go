@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -78,23 +79,37 @@ func (ssmSSHDialer) Dial(
 	// The instance id is what ssh sees as the host name here, so that is the
 	// name known_hosts is searched for. It has to carry a port: knownhosts
 	// runs SplitHostPort on this too.
-	sshConnection, channels, requests, err := ssh.NewClientConn(
-		tunnel, tunnel.address, clientConfig)
+	sshConnection, channels, requests, err := handshake(
+		tunnel, tunnel.address, clientConfig, 30*time.Second)
 	if err != nil {
-		// If the tunnel itself failed, AWS said why on stderr. That is far more
-		// useful than "handshake failed: EOF".
+		// Whatever AWS printed on stderr is reported alongside the ssh error
+		// rather than instead of it: stderr also carries harmless warnings, and
+		// those must not be mistaken for the reason the handshake failed.
 		awsComplaint := strings.TrimSpace(tunnel.problems.string())
 		tunnel.Close()
 
 		if awsComplaint != "" {
-			return nil, fmt.Errorf("SSM tunnel to %s: %s",
-				config.Target, explainSSMFailure(config.Target, awsComplaint))
+			return nil, fmt.Errorf(
+				"ssh handshake through the SSM tunnel to %s: %w\n\nthe tunnel also said: %s",
+				config.Target, err, explainSSMFailure(config.Target, awsComplaint))
 		}
 		return nil, fmt.Errorf("ssh handshake through the SSM tunnel to %s: %w",
 			config.Target, err)
 	}
 
-	return startShell(ssh.NewClient(sshConnection, channels, requests), size, onOutput, onExit)
+	client := ssh.NewClient(sshConnection, channels, requests)
+
+	// If the tunnel dies mid-session, ssh only sees EOF. The reason is in the
+	// tunnel's stderr, so attach it on the way out.
+	return startShell(client, size, onOutput, func(exitErr error) {
+		if exitErr != nil {
+			if complaint := strings.TrimSpace(tunnel.problems.string()); complaint != "" {
+				exitErr = fmt.Errorf("%w — the tunnel said: %s",
+					exitErr, explainSSMFailure(config.Target, complaint))
+			}
+		}
+		onExit(exitErr)
+	})
 }
 
 // tunnelOptions are the rarely-changed settings kept in the connection's extra
@@ -191,7 +206,13 @@ func (connection *processConn) Close() error {
 			connection.command.Process.Kill()
 		}
 		// Wait reaps the process and waits for the goroutine copying stderr.
-		closeErr = connection.command.Wait()
+		// After Kill it always reports "signal: killed", which is the expected
+		// outcome here rather than a failure worth passing on.
+		waitErr := connection.command.Wait()
+		var exited *exec.ExitError
+		if waitErr != nil && !errors.As(waitErr, &exited) {
+			closeErr = waitErr
+		}
 	})
 	return closeErr
 }
@@ -201,12 +222,29 @@ func (connection *processConn) Close() error {
 func (connection *processConn) LocalAddr() net.Addr  { return tunnelAddr{connection.address} }
 func (connection *processConn) RemoteAddr() net.Addr { return tunnelAddr{connection.address} }
 
-// Deadlines are accepted and ignored. Reporting an error instead would abort
-// handshakes that only wanted a timeout they can live without; the tunnel
-// process dying is what actually ends a stuck connection.
-func (connection *processConn) SetDeadline(time.Time) error      { return nil }
-func (connection *processConn) SetReadDeadline(time.Time) error  { return nil }
-func (connection *processConn) SetWriteDeadline(time.Time) error { return nil }
+// StdinPipe and StdoutPipe hand back *os.File, and those support deadlines on
+// pipes — so these are real implementations, not stubs. The handshake relies
+// on them to avoid hanging forever on a tunnel that goes quiet.
+func (connection *processConn) SetDeadline(deadline time.Time) error {
+	if err := connection.SetReadDeadline(deadline); err != nil {
+		return err
+	}
+	return connection.SetWriteDeadline(deadline)
+}
+
+func (connection *processConn) SetReadDeadline(deadline time.Time) error {
+	if file, ok := connection.reader.(*os.File); ok {
+		return file.SetReadDeadline(deadline)
+	}
+	return nil
+}
+
+func (connection *processConn) SetWriteDeadline(deadline time.Time) error {
+	if file, ok := connection.writer.(*os.File); ok {
+		return file.SetWriteDeadline(deadline)
+	}
+	return nil
+}
 
 type tunnelAddr struct{ address string }
 
