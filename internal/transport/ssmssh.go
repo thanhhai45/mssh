@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -75,9 +76,10 @@ func (ssmSSHDialer) Dial(
 	}
 
 	// The instance id is what ssh sees as the host name here, so that is the
-	// name known_hosts is searched for.
+	// name known_hosts is searched for. It has to carry a port: knownhosts
+	// runs SplitHostPort on this too.
 	sshConnection, channels, requests, err := ssh.NewClientConn(
-		tunnel, config.Target, clientConfig)
+		tunnel, tunnel.address, clientConfig)
 	if err != nil {
 		// If the tunnel itself failed, AWS said why on stderr. That is far more
 		// useful than "handshake failed: EOF".
@@ -156,6 +158,7 @@ func startSSMTunnel(dialContext context.Context, config Config) (*processConn, e
 		writer:   writer,
 		reader:   reader,
 		problems: problems,
+		address:  net.JoinHostPort(config.Target, strconv.Itoa(portNumber)),
 	}, nil
 }
 
@@ -163,11 +166,11 @@ func startSSMTunnel(dialContext context.Context, config Config) (*processConn, e
 // SSH handshake can run over them. It is the Go equivalent of ssh's
 // ProxyCommand.
 type processConn struct {
-	command  *exec.Cmd
-	writer   io.WriteCloser
-	reader   io.ReadCloser
-	problems *tailBuffer
-
+	command   *exec.Cmd
+	writer    io.WriteCloser
+	reader    io.ReadCloser
+	problems  *tailBuffer
+	address   string
 	closeOnce sync.Once
 }
 
@@ -195,8 +198,8 @@ func (connection *processConn) Close() error {
 
 // The rest of net.Conn has no meaning for a pair of pipes. Satisfying an
 // interface does not oblige every method to do something.
-func (connection *processConn) LocalAddr() net.Addr  { return tunnelAddr{} }
-func (connection *processConn) RemoteAddr() net.Addr { return tunnelAddr{} }
+func (connection *processConn) LocalAddr() net.Addr  { return tunnelAddr{connection.address} }
+func (connection *processConn) RemoteAddr() net.Addr { return tunnelAddr{connection.address} }
 
 // Deadlines are accepted and ignored. Reporting an error instead would abort
 // handshakes that only wanted a timeout they can live without; the tunnel
@@ -205,7 +208,7 @@ func (connection *processConn) SetDeadline(time.Time) error      { return nil }
 func (connection *processConn) SetReadDeadline(time.Time) error  { return nil }
 func (connection *processConn) SetWriteDeadline(time.Time) error { return nil }
 
-type tunnelAddr struct{}
+type tunnelAddr struct{ address string }
 
-func (tunnelAddr) Network() string { return "ssm" }
-func (tunnelAddr) String() string  { return "aws-ssm-tunnel" }
+func (address tunnelAddr) Network() string { return "ssm" }
+func (address tunnelAddr) String() string  { return address.address }
