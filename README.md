@@ -121,8 +121,9 @@ app updates.
 If you see this:
 
 ```
-ssh handshake with 203.0.113.10:22: ssh: handshake failed:
-knownhosts: key is unknown
+203.0.113.10 has never been connected to from this machine.
+Run `ssh 203.0.113.10` once, check the fingerprint it shows, and accept it
+— that records the key in /Users/you/.ssh/known_hosts, which mssh reads too
 ```
 
 it means that machine has never been connected to from this computer.
@@ -272,7 +273,7 @@ frontend/src/
 
 | Message | What to do |
 |---|---|
-| `knownhosts: key is unknown` | Connect once with `ssh` — see the section above |
+| `... has never been connected to from this machine` | Connect once with `ssh` — see the section above |
 | `the host key ... has CHANGED` | Stop and verify with the server's owner |
 | `ssh-agent is not running` | Start it, or switch the connection to a key file or password |
 | `key ... is protected by a passphrase` | `ssh-add <key>`, then use the SSH agent method |
