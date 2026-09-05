@@ -141,7 +141,7 @@ func hostKeyCallbackFor(knownHostsPath string) (ssh.HostKeyCallback, error) {
 }
 
 func expandHome(rawPath string) string {
-	if !strings.HasPrefix(rawPath, "-/") {
+	if !strings.HasPrefix(rawPath, "~/") {
 		return rawPath
 	}
 	homeDirectory, err := os.UserHomeDir()

@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,5 +91,32 @@ func TestExplainSSMFailure(t *testing.T) {
 		"An error occurred (AccessDeniedException) when calling the StartSession operation")
 	if !strings.Contains(got, "ssm:StartSession") {
 		t.Errorf("explanation %q does not mention the missing permission", got)
+	}
+}
+
+func TestExpandHome(t *testing.T) {
+	homeDirectory, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory on this machine")
+	}
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"tilde is expanded", "~/.ssh/id_ed25519", filepath.Join(homeDirectory, ".ssh/id_ed25519")},
+		{"absolute paths are left alone", "/etc/ssh/key", "/etc/ssh/key"},
+		{"relative paths are left alone", "keys/id_ed25519", "keys/id_ed25519"},
+		{"a bare tilde is not a home path", "~weird", "~weird"},
+		{"empty stays empty", "", ""},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := expandHome(testCase.in); got != testCase.want {
+				t.Errorf("expandHome(%q) = %q, want %q", testCase.in, got, testCase.want)
+			}
+		})
 	}
 }
