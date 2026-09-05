@@ -3,7 +3,10 @@ name: release
 on:
   push:
     tags: ['v*']
-
+# GITHUB_TOKEN is read-only by default. Creating a release needs write access
+# to repository contents — and nothing else.
+permissions:
+  contents: write
 jobs:
   macos:
     runs-on: macos-latest
