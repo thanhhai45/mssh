@@ -1,0 +1,37 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: wails build -platform darwin/universal -clean
+
+      - name: Package
+        run: |
+          cd build/bin
+          ditto -c -k --keepParent mssh.app mssh-${GITHUB_REF_NAME}-macos-universal.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: build/bin/*.zip

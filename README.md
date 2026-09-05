@@ -29,7 +29,7 @@ Clear the quarantine flag once:
 xattr -dr com.apple.quarantine /Applications/mssh.app
 ```
 ---
-```
+
 ## Features
 
 - **Workspaces** — group connections by account, environment or customer, each
