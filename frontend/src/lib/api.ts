@@ -1,4 +1,5 @@
 import * as App from '../../wailsjs/go/main/App';
+import {EventsOn} from '../../wailsjs/runtime/runtime';
 import type {store} from '../../wailsjs/go/models';
 
 /* ---------------- Types ---------------- */
@@ -13,6 +14,23 @@ export type ResolvedAWS = store.ResolvedAWS;
 /** Go sends these as plain strings. These are the sets it actually accepts. */
 export type ConnectionKind = 'ssh' | 'ssm' | 'ssm-ssh';
 export type AuthMethod = 'agent' | 'key' | 'password';
+
+export type SessionState = 'connecting' | 'connected' | 'disconnected' | 'error';
+
+export type SessionStatus = {
+  connectionId: string;
+  state: SessionState;
+  message: string;
+}
+
+/**
+* Must match transport.ErrPasswordRequired on the Go side.
+*
+* Sentinel errors do not survive the trip to JavaScript: Wails sends only the
+* message text. So the wire contract is this string, declared once here rather
+* than compared inline in three components.
+*/
+export const PASSWORD_REQUIRED = 'password required';
 
 export const CONNECTION_KINDS: ConnectionKind[] = ['ssh', 'ssm', 'ssm-ssh'];
 export const AUTH_METHODS: AuthMethod[] = ['agent', 'key', 'password'];
@@ -116,6 +134,11 @@ export function toConnectionInput(c: Connection): ConnectionInput {
   };
 }
 
+/** Password validate */
+export function needsPassword(err: unknown): boolean {
+  return errorMessage(err).includes(PASSWORD_REQUIRED)
+}
+
 /* ---------------- Calls ---------------- */
 
 export const api = {
@@ -138,7 +161,25 @@ export const api = {
   setConnectionPassword: (id: string, password: string): Promise<void> => App.SetConnectionPassword(id, password),
   deleteConnectionPassword: (id: string): Promise<void> => App.DeleteConnectionPassword(id),
   hasConnectionPassword: (id: string): Promise<boolean> => App.HasConnectionPassword(id),
+
+  connectSession: (id: string, password: string, cols: number, rows: number): Promise<void> => App.ConnectSession(id, password, cols, rows),
+  writeToSession: (id: string, data: string): Promise<void> => App.WriteToSession(id, data),
+  resizeSession: (id: string, cols: number, rows: number): Promise<void> => App.ResizeSession(id, cols, rows),
+  disconnectSession: (id: string): Promise<void> => App.DisconnectSession(id),
+  openSessionIds: (): Promise<string[]> => App.OpenSessionIDs(),
+  CheckSSMTools: (): Promise<void> => App.CheckSSMTools(),
 };
+
+/* ---------------- Events ---------------- */
+/** Subscribes to one session's output. Returns the unsubscribe function. */
+export function onSessionOutput(connectionId: string, handler: (chunk: string) => void,): () => void {
+  return EventsOn('session:output:'+ connectionId, handler);
+}
+
+/** Subscribes to status changes for every session. Returns the unsubscribe function. */
+export function onSessionStatus(handler: (status: SessionStatus) => void): () => void {
+  return EventsOn('session:status', handler);
+}
 
 /** Wails rejects with a bare string, not an Error. Normalise it for the UI. */
 export function errorMessage(err: unknown): string {
@@ -146,3 +187,18 @@ export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
 }
+
+/** Tailwind classes for the status dot of a session. */
+export function sessionDotClass(state: SessionState | undefined): string {
+  switch (state) {
+    case 'connected':
+      return 'bg-emerald-500';
+    case 'connecting':
+      return 'bg-amber-500 animate-pulse';
+    case 'error':
+      return 'bg-red-500';
+    default:
+      return 'bg-muted-foreground/30';
+  }
+}
+

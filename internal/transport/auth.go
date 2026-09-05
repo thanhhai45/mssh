@@ -103,14 +103,41 @@ func hostKeyCallbackFor(knownHostsPath string) (ssh.HostKeyCallback, error) {
 		knownHostsPath = filepath.Join(homeDirectory, ".ssh", "known_hosts")
 	}
 
-	callback, err := knownhosts.New(knownHostsPath)
+	verify, err := knownhosts.New(knownHostsPath)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"read %s: %w - connect once with the ssh command first so the host "+
 				"key gets recorded", knownHostsPath, err)
 	}
 
-	return callback, nil
+	// knownhosts reports "unknown host" and "the key changed" as the same kind
+	// of error, but they mean very different things and deserve very different
+	// advice.
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := verify(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+
+		var keyError *knownhosts.KeyError
+		if !errors.As(err, &keyError) {
+			return err
+		}
+
+		if len(keyError.Want) == 0 {
+			return fmt.Errorf(
+				"%s has never been connected to from this machine. Run "+
+					"`ssh %s` once, check the fingerprint it shows, and accept "+
+					"it — that records the key in %s, which mssh reads too",
+				hostname, hostname, knownHostsPath)
+		}
+
+		return fmt.Errorf(
+			"the host key for %s has CHANGED since it was recoreded. Either the "+
+				"server was rebuilt, or something is intercepting this "+
+				"connection. Check with whoever runs it before removing the old "+
+				"entry with `ssh-keygen -R %s`", hostname, hostname)
+	}, nil
 }
 
 func expandHome(rawPath string) string {

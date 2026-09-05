@@ -1,66 +1,31 @@
 import {useEffect, useRef} from 'react'
-import {FitAddon} from '@xterm/addon-fit'
-import {Terminal} from '@xterm/xterm'
-import '@xterm/xterm/css/xterm.css'
 
-const ENTER = '\r'
-const BACKSPACE = '\x7f'
+import {attachTerminal, detachTerminal, resizeTerminal} from '@/lib/terminal-session'
 
-export function XtermView({banner}: {banner: string[]}) {
+/**
+ * Borrows a terminal from the module-level store for as long as it is mounted.
+ *
+ * It creates nothing and destroys nothing. The terminal outlives this
+ * component, which is the only way scrollback survives changing tabs.
+ */
+export function XtermView({connectionId}: {connectionId: string}) {
     const containerRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
         const container = containerRef.current
         if (!container) return
 
-        const term = new Terminal({
-            convertEol: true,
-            fontSize: 13,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-            cursorBlink: true,
-            theme: {
-                background: '#09090b',
-                foreground: '#e4e4e7',
-                cursor: '#e4e4e7',
-            },
-        })
-        const fitAddon = new FitAddon()
-        term.loadAddon(fitAddon)
-        term.open(container)
-        fitAddon.fit()
+        attachTerminal(connectionId, container)
 
-        banner.forEach((line) => term.writeln(line))
-        term.write('$ ')
-
-        let line = ''
-        const dataListener = term.onData((data) => {
-            if (data === ENTER) {
-                term.write('\r\n')
-                if (line.trim().length > 0) {
-                    term.writeln(`mssh: ${line}: no active SSH connection`)
-                }
-                line = ''
-                term.write('$ ')
-            } else if (data === BACKSPACE) {
-                if (line.length > 0) {
-                    line = line.slice(0, -1)
-                    term.write('\b \b')
-                }
-            } else if (data >= ' ') {
-                line += data
-                term.write(data)
-            }
-        })
-
-        const resizeObserver = new ResizeObserver(() => fitAddon.fit())
-        resizeObserver.observe(container)
+        const observer = new ResizeObserver(() => resizeTerminal(connectionId))
+        observer.observe(container)
 
         return () => {
-            dataListener.dispose()
-            resizeObserver.disconnect()
-            term.dispose()
+            observer.disconnect()
+            // Detach, never dispose: the session is still running.
+            detachTerminal(connectionId)
         }
-    }, [banner])
+    }, [connectionId])
 
     return <div ref={containerRef} className="h-full w-full"/>
 }

@@ -36,11 +36,13 @@ import {
 import {
     describeConnection,
     errorMessage,
+    sessionDotClass,
     toConnectionInput,
     type Connection,
     type Workspace,
 } from '@/lib/api'
 import {swatchClass} from '@/lib/colors'
+import { useSessionStatus } from '@/lib/session-status-store'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
 
@@ -52,8 +54,8 @@ type PendingDelete =
 export function WorkspaceNav() {
     const pathname = useRouterState({select: (s) => s.location.pathname})
     const navigate = useNavigate()
-    const {workspaces, connections, createConnection, deleteWorkspace, deleteConnection} =
-        useWorkspaces()
+    const {workspaces, connections, createConnection, deleteWorkspace, deleteConnection} = useWorkspaces()
+    const {stateOf} = useSessionStatus()
 
     // Both dialogs are mounted only while open, so they never hold stale state.
     const [workspaceDialog, setWorkspaceDialog] = useState<Workspace | null | undefined>(undefined)
@@ -65,6 +67,7 @@ export function WorkspaceNav() {
     const [pending, setPending] = useState<PendingDelete | null>(null)
     const [deleteBusy, setDeleteBusy] = useState(false)
     const [deleteError, setDeleteError] = useState<string | null>(null)
+    
 
     async function duplicateConnection(workspace: Workspace, connection: Connection) {
         try {
@@ -188,6 +191,7 @@ export function WorkspaceNav() {
                                                         className="h-auto py-1.5 pr-8"
                                                     >
                                                         <Link to={to}>
+                                                            <span className={cn('size-1.5 shrink-0 rounded-full', sessionDotClass(stateOf(connection.id)))}/>
                                                             <div className="flex min-w-0 flex-col leading-tight">
                                                                 <span className="truncate">
                                                                     {connection.name}
