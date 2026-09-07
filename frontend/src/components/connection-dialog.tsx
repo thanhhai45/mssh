@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react'
-import {Cloud, CloudCog, Eye, EyeOff, KeyRound} from 'lucide-react'
+import {Cloud, CloudCog, Eye, EyeOff, KeyRound, Terminal} from 'lucide-react'
 
 import {ColorPicker} from '@/components/color-picker'
 import {Button} from '@/components/ui/button'
@@ -36,6 +36,7 @@ import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
 
 const KIND_ICON: Record<ConnectionKind, typeof KeyRound> = {
+    'ssh-config': Terminal,
     'ssh': KeyRound,
     'ssm': Cloud,
     'ssm-ssh': CloudCog,
@@ -166,7 +167,7 @@ export function ConnectionDialog({
                         {/* ---- Kind ---- */}
                         <div className="grid gap-2">
                             <Label>How to reach it</Label>
-                            <div className="grid gap-2 sm:grid-cols-3">
+                            <div className="grid gap-2 sm:grid-cols-2">
                                 {CONNECTION_KINDS.map((kind) => {
                                     const Icon = KIND_ICON[kind]
                                     const selected = input.kind === kind
@@ -234,14 +235,21 @@ export function ConnectionDialog({
                         {/* ---- Target ---- */}
                         <div className="grid gap-2">
                             <Label htmlFor="conn-target">
-                                {showAWSFields ? 'Instance ID' : 'Host'}
-                            </Label>
+                                {input.kind == 'ssh-config' ? 'SSH host alias' : showAWSFields ? 'Instance ID' : 'Host'}
+                        </Label>
                             <Input
                                 id="conn-target"
                                 value={input.target}
                                 onChange={(e) => set('target', e.target.value)}
-                                placeholder={showAWSFields ? 'i-0abc123456789' : '10.0.4.12'}
+                                placeholder={input.kind === 'ssh-config' ? 'prod-web-1' : showAWSFields ? 'i-0abc123456789' : '10.0.4.12'}
                             />
+                            {input.kind === 'ssh-config' && (
+                                <p className="text-xs text-muted-foreground">
+                                    The name of a <code>Host</code> block in{' '}
+                                    <code>~/.ssh/config</code>. Everything else — user, key,
+                                    ProxyCommand, jump hosts — comes from there.
+                                </p>
+                            )}
                         </div>
 
                         {/* ---- SSH-only fields ---- */}

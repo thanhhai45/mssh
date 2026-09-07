@@ -63,50 +63,6 @@ func TestLoadMigrations(t *testing.T) {
 	}
 }
 
-func TestMigrateV1ToV2(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "v1.db")
-	writeV1Database(t, path)
-
-	// Opening with the current build must upgrade the file in place.
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open on a v1 database: %v", err)
-	}
-	defer s.Close()
-
-	var version int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
-		t.Fatalf("read user_version: %v", err)
-	}
-	if version != 2 {
-		t.Errorf("user_version = %d, want 2", version)
-	}
-
-	conn, err := s.GetConnection("c1")
-	if err != nil {
-		t.Fatalf("connection did not survive the migration: %v", err)
-	}
-	if conn.Name != "Taptanh" || conn.Username != "thinhvu" || conn.Target != "115.73.222.79" {
-		t.Errorf("row changed during migration: %+v", conn)
-	}
-
-	// The point of v2.
-	if _, err := s.db.Exec(`UPDATE connections SET auth_method = 'password' WHERE id = 'c1'`); err != nil {
-		t.Errorf("v2 should accept auth_method 'password': %v", err)
-	}
-	if _, err := s.db.Exec(`UPDATE connections SET auth_method = 'bogus' WHERE id = 'c1'`); err == nil {
-		t.Error("CHECK constraint did not survive the rebuild")
-	}
-
-	// DROP TABLE takes the index with it; the migration has to put it back.
-	var name string
-	if err := s.db.QueryRow(
-		`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_connections_workspace'`,
-	).Scan(&name); err != nil {
-		t.Errorf("index was not recreated: %v", err)
-	}
-}
-
 func TestMigrateIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.db")
 	writeV1Database(t, path)

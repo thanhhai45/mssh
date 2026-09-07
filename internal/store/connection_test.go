@@ -91,6 +91,25 @@ func TestNormalizeConnection(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "ssh-config keeps nothing but the alias",
+			in: ConnectionInput{
+				Name: "prod-web-1", Kind: KindSSHConfig, Target: " prod-web-1 ",
+				Username: "leftover", Port: 2222, AuthMethod: AuthKey,
+				KeyPath: "/tmp/k", AWSProfile: "itviec", AWSRegion: "ap-southeast-1",
+			},
+			check: func(t *testing.T, got ConnectionInput) {
+				if got.Target != "prod-web-1" {
+					t.Errorf("Target = %q, want trimmed", got.Target)
+				}
+				if got.Username != "" || got.Port != 0 || got.AuthMethod != "" || got.KeyPath != "" {
+					t.Errorf("ssh fields survived: %+v", got)
+				}
+				if got.AWSProfile != "" || got.AWSRegion != "" {
+					t.Errorf("aws fields survived: %+v", got)
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {

@@ -12,7 +12,7 @@ export type ParsedSSHCommand = store.ParsedSSHCommand;
 export type ResolvedAWS = store.ResolvedAWS;
 
 /** Go sends these as plain strings. These are the sets it actually accepts. */
-export type ConnectionKind = 'ssh' | 'ssm' | 'ssm-ssh';
+export type ConnectionKind = 'ssh' | 'ssm' | 'ssm-ssh' | 'ssh-config';
 export type AuthMethod = 'agent' | 'key' | 'password';
 
 export type SessionState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -32,7 +32,7 @@ export type SessionStatus = {
 */
 export const PASSWORD_REQUIRED = 'password required';
 
-export const CONNECTION_KINDS: ConnectionKind[] = ['ssh', 'ssm', 'ssm-ssh'];
+export const CONNECTION_KINDS: ConnectionKind[] = ['ssh', 'ssm', 'ssm-ssh', 'ssh-config'];
 export const AUTH_METHODS: AuthMethod[] = ['agent', 'key', 'password'];
 
 export const KIND_META: Record<ConnectionKind, {label: string; hint: string}> = {
@@ -48,6 +48,10 @@ export const KIND_META: Record<ConnectionKind, {label: string; hint: string}> = 
     label: 'SSH over SSM',
     hint: 'Your own user, tunnelled through Session Manager',
   },
+  'ssh-config': {
+    label: 'System SSH',
+    hint: 'Use a Host alias from ~/.ssh/config - ssh handles the rest',
+  }
 };
 
 export const AUTH_META: Record<AuthMethod, {label: string; hint: string}> = {
@@ -89,6 +93,8 @@ export function usesAWS(kind: string): boolean {
 /** One-line subtitle, the way the sidebar shows it. */
 export function describeConnection(c: Connection): string {
   switch (c.kind) {
+    case 'ssh-config':
+      return `ssh ${c.target}`;
     case 'ssm':
       return c.awsRegion ? `${c.target} · ${c.awsRegion}` : c.target;
     case 'ssm-ssh':

@@ -14,9 +14,10 @@ import (
 type ConnectionKind string
 
 const (
-	KindSSH    ConnectionKind = "ssh"
-	KindSSM    ConnectionKind = "ssm"
-	KindSSMSSH ConnectionKind = "ssm-ssh"
+	KindSSH       ConnectionKind = "ssh"
+	KindSSM       ConnectionKind = "ssm"
+	KindSSMSSH    ConnectionKind = "ssm-ssh"
+	KindSSHConfig ConnectionKind = "ssh-config"
 )
 
 type AuthMethod string
@@ -29,7 +30,7 @@ const (
 
 func (k ConnectionKind) Valid() bool {
 	switch k {
-	case KindSSH, KindSSM, KindSSMSSH:
+	case KindSSH, KindSSM, KindSSMSSH, KindSSHConfig:
 		return true
 	default:
 		return false

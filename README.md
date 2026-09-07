@@ -1,12 +1,29 @@
 # mssh
 
-A small desktop app for managing and connecting to remote servers, built with
-[Wails](https://wails.io) (Go + React). It keeps your connections organised in
-workspaces, opens real SSH sessions, and keeps them alive while you move around
-the app.
+**A desktop app for the servers you keep having to reach.**
 
-Passwords are stored in your operating system's credential store, never in the
-application database.
+If you look after more than a handful of machines, the day looks like this: an
+`~/.ssh/config` you half remember, a scrollback you lose every time you close a
+tab, an AWS instance id pasted from a wiki, and a `start-session` command you
+copy from a colleague. The machines are not the hard part. Keeping track of them
+is.
+
+mssh puts them in one window. Connections live in workspaces — one per account,
+environment or customer — and each one records exactly how to reach that
+machine, so you never assemble the command again. Open a session, go read
+something else, come back: it is still there, still in the same directory, with
+`top` still running.
+
+It reaches machines four different ways, including AWS Session Manager, so
+instances with no open port and no public IP work the same as a VPS you rent by
+the month.
+
+Nothing leaves your computer. There is no account and no sync: connections go in
+a local SQLite file, passwords go in your operating system's credential store,
+and AWS credentials are never touched at all — the AWS CLI keeps those.
+
+Built with [Wails](https://wails.io): a Go backend and a React interface, in one
+binary.
 
 ---
 
@@ -34,8 +51,9 @@ xattr -dr com.apple.quarantine /Applications/mssh.app
 
 - **Workspaces** — group connections by account, environment or customer, each
   with its own colour and AWS defaults.
-- **Three ways to reach a machine** — direct SSH, AWS Session Manager, or SSH
-  tunnelled through Session Manager.
+- **Four ways to reach a machine** — a `Host` alias from your existing
+  `~/.ssh/config`, direct SSH, AWS Session Manager, or SSH tunnelled through
+  Session Manager.
 - **Sessions that survive navigation** — switch to another connection and back;
   your scrollback, working directory and running `top` are all still there.
 - **Real terminal** — a full pty, so `vim`, `htop` and colours work, and the
@@ -47,18 +65,26 @@ xattr -dr com.apple.quarantine /Applications/mssh.app
 
 ## Connection kinds
 
-| | **Direct SSH** | **AWS SSM** | **SSH over SSM** |
-|---|---|---|---|
-| Talks to | port 22 on the host | the AWS Session Manager API | the API, then SSH inside it |
-| Needs on your machine | nothing extra | AWS CLI + Session Manager plugin | AWS CLI + plugin + an SSH key |
-| Needs on the server | an open SSH port | SSM Agent and an IAM role | SSM Agent, IAM role, and `sshd` |
-| You land as | the user you configure | `ssm-user` | the user you configure |
-| Authenticates with | your key, agent or password | IAM, via the AWS CLI | IAM **and** SSH credentials |
-| Works with `scp` later | yes | no | yes |
+| | **System SSH** | **Direct SSH** | **AWS SSM** | **SSH over SSM** |
+|---|---|---|---|---|
+| You configure | one alias | host, user, credentials | instance id, profile, region | all of the above |
+| Talks to | whatever `ssh` decides | port 22 on the host | the Session Manager API | the API, then SSH inside it |
+| Needs on your machine | the `ssh` command | nothing extra | AWS CLI + Session Manager plugin | AWS CLI + plugin + an SSH key |
+| Needs on the server | whatever your config implies | an open SSH port | SSM Agent and an IAM role | SSM Agent, IAM role, and `sshd` |
+| You land as | whatever `~/.ssh/config` says | the user you configure | `ssm-user` | the user you configure |
+| Unknown host key | `ssh` asks in the terminal | recorded with `ssh` first | n/a | recorded with `ssh` first |
+| Works with `scp` later | yes | yes | no | yes |
 
-Pick **Direct SSH** for anything reachable over the network. Pick **AWS SSM**
-for EC2 instances with no open port and no public IP. Pick **SSH over SSM** when
-you want the tunnel *and* your own account rather than `ssm-user`.
+**System SSH** is the one to start with if you already have an `~/.ssh/config`.
+You give mssh a `Host` alias and nothing else; OpenSSH supplies the user, the
+key, `ProxyCommand`, jump hosts and host-key checking, exactly as it does on the
+command line. Anything you can already `ssh` into works here with no further
+setup.
+
+The other three exist for when you would rather describe the machine to mssh
+than to a config file. **Direct SSH** for anything reachable over the network,
+**AWS SSM** for EC2 instances with no open port and no public IP, and **SSH over
+SSM** when you want that tunnel *and* your own account rather than `ssm-user`.
 
 ---
 
@@ -136,7 +162,11 @@ app updates.
 
 ## ⚠️ Connecting to a server for the first time
 
-**This is the one thing that will surprise you.**
+**This is the one thing that will surprise you** — and the **System SSH** kind
+avoids it entirely. There, `ssh` asks you in the terminal, the way it always
+does, and typing `yes` is the whole procedure. The rest of this section applies
+to the other three kinds, where mssh checks host keys itself and has no prompt
+of its own yet.
 
 If you see this:
 

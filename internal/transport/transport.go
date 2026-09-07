@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	KindSSH    = "ssh"
-	KindSSM    = "ssm"
-	KindSSMSSH = "ssm-ssh"
+	KindSSH       = "ssh"
+	KindSSM       = "ssm"
+	KindSSMSSH    = "ssm-ssh"
+	KindSSHConfig = "ssh-config"
 )
 
 const (
@@ -77,6 +78,8 @@ func For(kind string) (Dialer, error) {
 		return ssmDialer{}, nil
 	case KindSSMSSH:
 		return ssmSSHDialer{}, nil
+	case KindSSHConfig:
+		return sshConfigDialer{}, nil
 	default:
 		return nil, fmt.Errorf("unknown connection kind %q", kind)
 	}
