@@ -120,8 +120,13 @@ func explainAWSFailure(profile string, output string) string {
 	case strings.Contains(lowered, "unable to locate credentials"),
 		strings.Contains(lowered, "you must specify a region"):
 		return fmt.Sprintf(
-			"no usable AWS credentials for this connection — run `%s`, "+
-				"or set a profile and region on the workspace", loginCommand)
+			"no AWS credentials this app can see.\n\n"+
+				"If you keep them in ~/.zshrc: an application started from Finder "+
+				"never reads that file, so those exports are invisible here. Run "+
+				"`aws configure` to keep them in ~/.aws/credentials instead, which "+
+				"every process can read.\n\n"+
+				"If you use SSO, run `%s`. Otherwise set a profile and region on "+
+				"the workspace.", loginCommand)
 
 	case strings.Contains(lowered, "could not be found") && strings.Contains(lowered, "profile"):
 		return fmt.Sprintf("AWS profile %q is not configured in ~/.aws/config", profile)

@@ -59,6 +59,19 @@ func explainSSHCommandFailure(alias string, output string) string {
 	lowered := strings.ToLower(output)
 
 	switch {
+	// A ProxyCommand that shells out to the AWS CLI fails here, and the reason
+	// is not something the user can guess: they can see the exports in their
+	// shell profile, so "no credentials" reads like a bug in this app.
+	case strings.Contains(lowered, "unable to locate credentials"),
+		strings.Contains(lowered, "credentials not found"),
+		strings.Contains(lowered, "the config profile") && strings.Contains(lowered, "could not be found"):
+		return fmt.Sprintf(
+			"the ProxyCommand for %q could not find AWS credentials.\n\n"+
+				"An application started from Finder does not read ~/.zshrc, so "+
+				"anything exported there is invisible to it. Run `aws configure` "+
+				"to keep the credentials in ~/.aws/credentials instead — every "+
+				"process can read that, however it was started.", alias)
+
 	case strings.Contains(lowered, "could not resolve hostname"):
 		return fmt.Sprintf(
 			"ssh does not know how to reach %q — check that ~/.ssh/config has a "+

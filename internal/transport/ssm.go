@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sync"
 )
 
 // ssmDialer opens a session by running `aws ssm start-session` under a local
@@ -52,33 +51,4 @@ func (ssmDialer) Dial(
 	return startPTYProcess(command, size, onOutput, onExit, func(output string) string {
 		return explainSSMFailure(config.Target, output)
 	})
-}
-
-// tailBuffer keeps the last few kilobytes written through it, so a process that
-// dies early can be explained using whatever it printed on the way out.
-type tailBuffer struct {
-	mutex sync.Mutex
-	data  []byte
-	limit int
-}
-
-func (buffer *tailBuffer) append(chunk []byte) {
-	buffer.mutex.Lock()
-	defer buffer.mutex.Unlock()
-
-	buffer.data = append(buffer.data, chunk...)
-	if len(buffer.data) > buffer.limit {
-		buffer.data = buffer.data[len(buffer.data)-buffer.limit:]
-	}
-}
-
-func (buffer *tailBuffer) string() string {
-	buffer.mutex.Lock()
-	defer buffer.mutex.Unlock()
-	return string(buffer.data)
-}
-
-func (buffer *tailBuffer) Write(chunk []byte) (int, error) {
-	buffer.append(chunk)
-	return len(chunk), nil
 }

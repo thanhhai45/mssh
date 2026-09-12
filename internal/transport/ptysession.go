@@ -95,3 +95,39 @@ func (session *ptySession) Close() error {
 	})
 	return closeErr
 }
+
+// tailBuffer keeps the last few kilobytes written through it, so a process that
+// dies early can be explained using whatever it printed on the way out.
+//
+// It lives here rather than with any one kind because three of them need it:
+// the pty kinds read it from startPTYProcess, and the ssm-ssh tunnel uses it
+// as the child's Stderr.
+type tailBuffer struct {
+	mutex sync.Mutex
+	data  []byte
+	limit int
+}
+
+func (buffer *tailBuffer) append(chunk []byte) {
+	buffer.mutex.Lock()
+	defer buffer.mutex.Unlock()
+
+	buffer.data = append(buffer.data, chunk...)
+	if len(buffer.data) > buffer.limit {
+		buffer.data = buffer.data[len(buffer.data)-buffer.limit:]
+	}
+}
+
+func (buffer *tailBuffer) string() string {
+	buffer.mutex.Lock()
+	defer buffer.mutex.Unlock()
+	return string(buffer.data)
+}
+
+// Write lets a tailBuffer be handed straight to exec.Cmd as Stderr. Cmd copies
+// into it from its own goroutine, and append takes the lock, so reading the
+// contents from elsewhere is safe at any time.
+func (buffer *tailBuffer) Write(chunk []byte) (int, error) {
+	buffer.append(chunk)
+	return len(chunk), nil
+}
