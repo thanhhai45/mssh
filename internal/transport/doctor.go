@@ -153,8 +153,12 @@ func explainSSMFailure(target string, output string) string {
 
 	case strings.Contains(lowered, "invalidinstanceid"):
 		return fmt.Sprintf("%s is not an instance this account can see", target)
-
+	case strings.Contains(lowered, "terminated"),
+		strings.Contains(lowered, "session is not in a valid state"):
+		return fmt.Sprintf(
+			"Session Manager ended the session with %s - most often the idle "+
+				"timeout on the account, which defaults to 20 minutes", target)
 	default:
-		return strings.TrimSpace(output)
+		return lastLines(output, 3)
 	}
 }

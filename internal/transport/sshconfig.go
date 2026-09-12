@@ -82,8 +82,13 @@ func explainSSHCommandFailure(alias string, output string) string {
 			"%s refused the credentials ssh offered — check User and IdentityFile "+
 				"in its Host block in ~/.ssh/config", alias)
 
+	case strings.Contains(lowered, "closed by remote host"),
+		strings.Contains(lowered, "connection reset byt peer"),
+		strings.Contains(lowered, "broken pipe"),
+		strings.Contains(lowered, "not responding"):
+		return fmt.Sprintf("%s closed the connection - usually an idle timeout, a reboot, or the network dropping", alias)
 	default:
 		// ssh's own message is usually the clearest thing available.
-		return strings.TrimSpace(output)
+		return lastLines(output, 3)
 	}
 }

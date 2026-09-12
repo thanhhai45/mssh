@@ -122,6 +122,9 @@ export function WorkspaceNav() {
                     const groupPath = `/workspaces/${workspace.id}`
                     const isActiveGroup = pathname.startsWith(groupPath)
                     const list = connections[workspace.id] ?? []
+                    const connectedCount = list.filter(
+                        (connect) => stateOf(connect.id) === 'connected'
+                    ).length
 
                     return (
                         <Collapsible
@@ -134,6 +137,11 @@ export function WorkspaceNav() {
                                     <SidebarMenuButton tooltip={workspace.name}>
                                         <ServerIcon/>
                                         <span className="flex-1 truncate">{workspace.name}</span>
+                                        {list.length > 0 && (
+                                            <span className={cn('shrink-0 text-xs tabular-nums', connectedCount > 0 ? 'text-emerald-600 dark:text-emerald-500' : 'text-muted-foreground')}>
+                                                {connectedCount > 0 ? `${connectedCount}/${list.length}` : list.length}
+                                            </span>
+                                        )}
                                         <span
                                             className={cn(
                                                 'size-2 shrink-0 rounded-full',

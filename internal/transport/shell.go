@@ -85,6 +85,13 @@ func startShell(
 			exitErr = nil
 		}
 
+		var noExitStatus *ssh.ExitMissingError
+		if errors.As(exitErr, &noExitStatus) {
+			exitErr = errors.New(
+				"the server closed the connection without ending the session " +
+					"- usually an idle timeout, a reboot, or network dropping")
+		}
+
 		session.Close()
 		onExit(exitErr)
 	}()

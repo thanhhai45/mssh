@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/creack/pty"
 )
@@ -50,7 +51,13 @@ func startPTYProcess(
 
 	go func() {
 		waitErr := command.Wait()
+		userClosed := session.closedOnPurpose.Load()
 		session.Close()
+
+		if userClosed {
+			onExit(nil)
+			return
+		}
 
 		if waitErr != nil && explain != nil {
 			if message := strings.TrimSpace(explain(recentOutput.string())); message != "" {
@@ -68,7 +75,10 @@ type ptySession struct {
 	command  *exec.Cmd
 	terminal *os.File
 
-	closeOnce sync.Once
+	// closedOnPurpose separates "The user pressed Disconnected" from "the process fell over"
+	// Both end with Wait returning an error, and only the second one is worth telling anybody about.
+	closedOnPurpose atomic.Bool
+	closeOnce       sync.Once
 }
 
 func (session *ptySession) Write(payload []byte) (int, error) {
@@ -85,6 +95,7 @@ func (session *ptySession) Resize(size Size) error {
 func (session *ptySession) Close() error {
 	var closeErr error
 	session.closeOnce.Do(func() {
+		session.closedOnPurpose.Store(true)
 		// Killing the process is what ends the session. Closing only the pty
 		// would leave it running, holding a remote session open and a process
 		// on this machine.
@@ -94,6 +105,20 @@ func (session *ptySession) Close() error {
 		closeErr = session.terminal.Close()
 	})
 	return closeErr
+}
+
+// lastLines returns the last few on blank lines of output
+func lastLines(output string, count int) string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+
+	kept := make([]string, 0, count)
+	for index := len(lines) - 1; index >= 0 && len(kept) < count; index-- {
+		line := strings.TrimSpace(lines[index])
+		if line != "" {
+			kept = append([]string{line}, kept...)
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 // tailBuffer keeps the last few kilobytes written through it, so a process that

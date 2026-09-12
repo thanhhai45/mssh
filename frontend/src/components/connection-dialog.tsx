@@ -65,6 +65,7 @@ export function ConnectionDialog({
     const [remember, setRemember] = useState(true)
     const [showPassword, setShowPassword] = useState(false)
     const [hasStored, setHasStored] = useState(false)
+    const [ssmToolsError, setSSMToolsError] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -86,6 +87,22 @@ export function ConnectionDialog({
             cancelled = true
         }
     }, [connection])
+
+    // Asked once when the dialog opens, so the AWS kinds can say up front that
+    // they need something installed — instead of failing at connect time.
+    useEffect(() => {
+        let cancelled = false
+        api.checkSSMTools()
+            .then(() => {
+                if (!cancelled) setSSMToolsError(null)
+            })
+            .catch((err) => {
+                if (!cancelled) setSSMToolsError(errorMessage(err))
+            })
+        return () => {
+            cancelled = true
+        }
+    }, [])
 
     function set<K extends keyof ConnectionInput>(key: K, value: ConnectionInput[K]) {
         setInput((prev) => ({...prev, [key]: value}))
@@ -191,10 +208,20 @@ export function ConnectionDialog({
                                             <span className="text-xs leading-snug text-muted-foreground">
                                                 {KIND_META[kind].hint}
                                             </span>
+                                            {ssmToolsError && usesAWS(kind) && (
+                                                <span className="text-xs font-medium text-amber-600 dark:text-amber-500">
+
+                                                </span>
+                                            )}
                                         </button>
                                     )
                                 })}
                             </div>
+                            {ssmToolsError && showAWSFields && (
+                                <p className='rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-xs text-amber-700 dark:text-amber-400'>
+                                    {ssmToolsError}
+                                </p>
+                            )}
                         </div>
 
                         {/* ---- Name ---- */}

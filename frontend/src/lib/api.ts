@@ -173,7 +173,7 @@ export const api = {
   resizeSession: (id: string, cols: number, rows: number): Promise<void> => App.ResizeSession(id, cols, rows),
   disconnectSession: (id: string): Promise<void> => App.DisconnectSession(id),
   openSessionIds: (): Promise<string[]> => App.OpenSessionIDs(),
-  CheckSSMTools: (): Promise<void> => App.CheckSSMTools(),
+  checkSSMTools: (): Promise<void> => App.CheckSSMTools(),
 };
 
 /* ---------------- Events ---------------- */
