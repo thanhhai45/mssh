@@ -16,6 +16,8 @@ import {
     sessionDotClass,
     type SessionState,
 } from '@/lib/api'
+import {accentTextClass} from '@/lib/colors'
+import {kindIcon} from '@/lib/kind-icons'
 import {useSessionStatus} from '@/lib/session-status-store'
 import {
     clearTerminal,
@@ -135,17 +137,26 @@ export function ServerTerminalPage() {
     }
 
     const statusMessage = statuses[connection.id]?.message
+    const KindIcon = kindIcon(connection.kind)
 
     return (
-        <div className="flex flex-1 flex-col gap-4">
+        <div className="flex flex-1 flex-col gap-4 duration-300 animate-in fade-in">
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                        <span className={cn('size-2 shrink-0 rounded-full', sessionDotClass(state))}/>
-                        <h1 className="truncate text-2xl font-semibold tracking-tight">
+                        <span
+                            className={cn(
+                                'size-2 shrink-0 rounded-full transition-colors duration-200',
+                                sessionDotClass(state),
+                            )}
+                        />
+                        <h1 className={cn('truncate text-2xl font-semibold tracking-tight', accentTextClass(workspace.color))}>
                             {connection.name}
                         </h1>
-                        <Badge variant="secondary">{kindMeta(connection.kind).label}</Badge>
+                        <Badge variant="secondary" className="shrink-0 gap-1">
+                            <KindIcon className="size-3"/>
+                            {kindMeta(connection.kind).label}
+                        </Badge>
                     </div>
                     <p className="truncate text-sm text-muted-foreground">
                         {describeConnection(connection)}

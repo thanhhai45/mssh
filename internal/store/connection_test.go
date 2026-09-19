@@ -131,6 +131,52 @@ func TestNormalizeConnection(t *testing.T) {
 	}
 }
 
+func TestMarkConnectionUsed(t *testing.T) {
+	s := openTest(t)
+
+	// A fixed clock: the assertion is about which fields move, and a real clock
+	// would make "did updated_at change?" depend on how fast the test ran.
+	s.now = func() int64 { return 1000 }
+
+	ws, err := s.CreateWorkspace(WorkspaceInput{Name: "AWS Prod"})
+	if err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
+	}
+
+	created, err := s.CreateConnection(ws.ID, ConnectionInput{
+		Name: "api-1", Kind: KindSSM, Target: "i-0abc12345",
+	})
+	if err != nil {
+		t.Fatalf("CreateConnection: %v", err)
+	}
+	if created.LastUsedAt != 0 {
+		t.Errorf("LastUsedAt = %d on a new connection, want 0", created.LastUsedAt)
+	}
+
+	s.now = func() int64 { return 2000 }
+	if err := s.MarkConnectionUsed(created.ID); err != nil {
+		t.Fatalf("MarkConnectionUsed: %v", err)
+	}
+
+	got, err := s.GetConnection(created.ID)
+	if err != nil {
+		t.Fatalf("GetConnection: %v", err)
+	}
+	if got.LastUsedAt != 2000 {
+		t.Errorf("LastUsedAt = %d, want 2000", got.LastUsedAt)
+	}
+	// The point of the whole method: using is not editing.
+	if got.UpdatedAt != created.UpdatedAt {
+		t.Errorf("UpdatedAt moved from %d to %d", created.UpdatedAt, got.UpdatedAt)
+	}
+
+	// The caller is a session that already opened. A row that has since gone
+	// is not its problem.
+	if err := s.MarkConnectionUsed("does-not-exist"); err != nil {
+		t.Errorf("marking a missing connection returned %v, want nil", err)
+	}
+}
+
 func TestConnectionCRUD(t *testing.T) {
 	s := openTest(t)
 

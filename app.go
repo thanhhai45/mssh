@@ -220,6 +220,10 @@ func (app *App) ConnectSession(
 		return err
 	}
 
+	// Best effort, and after the session is up: a bookkeeping failure must not
+	// turn a working connection into a reported error.
+	_ = app.store.MarkConnectionUsed(connectionID)
+
 	app.emitSessionStatus(connectionID, "connected", "")
 	return nil
 }

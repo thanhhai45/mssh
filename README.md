@@ -70,6 +70,7 @@ xattr -dr com.apple.quarantine /Applications/mssh.app
 
 | Key | Does |
 | --- | --- |
+| `⌘P` | Jump to any connection by name, host or workspace. |
 | `⌘F` | Find in the terminal. `⏎` next match, `⇧⏎` previous, `Esc` close. |
 | `⌘K` | Clear the terminal, iTerm2 style — local only, the remote shell is not told. |
 

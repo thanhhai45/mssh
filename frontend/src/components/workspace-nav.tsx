@@ -41,7 +41,8 @@ import {
     type Connection,
     type Workspace,
 } from '@/lib/api'
-import {swatchClass} from '@/lib/colors'
+import {accentEdgeClass, swatchClass} from '@/lib/colors'
+import {kindIcon} from '@/lib/kind-icons'
 import { useSessionStatus } from '@/lib/session-status-store'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
@@ -134,7 +135,18 @@ export function WorkspaceNav() {
                         >
                             <SidebarMenuItem>
                                 <CollapsibleTrigger asChild>
-                                    <SidebarMenuButton tooltip={workspace.name}>
+                                    <SidebarMenuButton
+                                        tooltip={workspace.name}
+                                        // The stripe is the workspace colour's
+                                        // main job: telling two of them apart
+                                        // while scanning down the sidebar.
+                                        className={cn(
+                                            'border-l-2 transition-colors',
+                                            isActiveGroup
+                                                ? accentEdgeClass(workspace.color)
+                                                : 'border-l-transparent',
+                                        )}
+                                    >
                                         <ServerIcon/>
                                         <span className="flex-1 truncate">{workspace.name}</span>
                                         {list.length > 0 && (
@@ -188,6 +200,7 @@ export function WorkspaceNav() {
                                     <SidebarMenuSub>
                                         {list.map((connection) => {
                                             const to = `${groupPath}/servers/${connection.id}`
+                                            const KindIcon = kindIcon(connection.kind)
                                             return (
                                                 <SidebarMenuSubItem
                                                     key={connection.id}
@@ -199,7 +212,8 @@ export function WorkspaceNav() {
                                                         className="h-auto py-1.5 pr-8"
                                                     >
                                                         <Link to={to}>
-                                                            <span className={cn('size-1.5 shrink-0 rounded-full', sessionDotClass(stateOf(connection.id)))}/>
+                                                            <span className={cn('size-1.5 shrink-0 rounded-full transition-colors duration-200', sessionDotClass(stateOf(connection.id)))}/>
+                                                            <KindIcon className="size-3.5 shrink-0 text-muted-foreground"/>
                                                             <div className="flex min-w-0 flex-col leading-tight">
                                                                 <span className="truncate">
                                                                     {connection.name}

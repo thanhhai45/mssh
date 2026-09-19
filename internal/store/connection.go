@@ -68,6 +68,11 @@ type Connection struct {
 	SortOrder   int            `json:"sortOrder"`
 	CreatedAt   int64          `json:"createdAt"`
 	UpdatedAt   int64          `json:"updatedAt"`
+
+	// LastUsedAt is 0 until the connection has been opened once. It is stamped
+	// by MarkConnectionUsed rather than by Update, because editing a connection
+	// is not using it.
+	LastUsedAt int64 `json:"lastUsedAt"`
 }
 
 type ConnectionInput struct {
@@ -86,7 +91,13 @@ type ConnectionInput struct {
 
 const connectionColumns = `id, workspace_id, name, kind, target, port, username,` +
 	`auth_method, key_path, aws_profile, aws_region, extra,` +
-	`color, sort_order, created_at, updated_at`
+	`color, sort_order, created_at, updated_at, last_used_at`
+
+// connectionPlaceholders is "?, ?, …", one per column in connectionColumns.
+// Derived rather than typed out: a hand-counted VALUES list that falls one
+// short of the column list compiles, and only fails when a row is inserted.
+var connectionPlaceholders = strings.TrimSuffix(
+	strings.Repeat("?, ", strings.Count(connectionColumns, ",")+1), ", ")
 
 // instanceIDPattern matches EC2 (i-…) and managed (mi-…) instance ids.
 // Compiled once at package load, not on every validation.
@@ -177,7 +188,7 @@ func connectionScanTargets(c *Connection) []any {
 		&c.ID, &c.WorkspaceID, &c.Name, &c.Kind, &c.Target,
 		&c.Port, &c.Username, &c.AuthMethod, &c.KeyPath,
 		&c.AWSProfile, &c.AWSRegion, &c.Extra, &c.Color,
-		&c.SortOrder, &c.CreatedAt, &c.UpdatedAt,
+		&c.SortOrder, &c.CreatedAt, &c.UpdatedAt, &c.LastUsedAt,
 	}
 }
 
@@ -188,7 +199,7 @@ func connectionValues(c Connection) []any {
 		c.ID, c.WorkspaceID, c.Name, c.Kind, c.Target,
 		c.Port, c.Username, c.AuthMethod, c.KeyPath,
 		c.AWSProfile, c.AWSRegion, c.Extra, c.Color,
-		c.SortOrder, c.CreatedAt, c.UpdatedAt,
+		c.SortOrder, c.CreatedAt, c.UpdatedAt, c.LastUsedAt,
 	}
 }
 
@@ -269,7 +280,7 @@ func (s *Store) CreateConnection(workspaceID string, input ConnectionInput) (Con
 
 	if _, err := s.db.Exec(
 		`INSERT INTO connections (`+connectionColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (`+connectionPlaceholders+`)`,
 		connectionValues(c)...,
 	); err != nil {
 		return Connection{}, fmt.Errorf("create connection: %w", err)
@@ -307,6 +318,24 @@ func (s *Store) UpdateConnection(id string, input ConnectionInput) (Connection, 
 	}
 
 	return s.GetConnection(id)
+}
+
+// MarkConnectionUsed stamps last_used_at with the current time.
+//
+// It deliberately leaves updated_at alone: opening a connection is not editing
+// it, and a list sorted by "recently changed" should not reshuffle every time
+// someone logs in somewhere.
+//
+// A connection that has since been deleted is not an error. The caller is a
+// session that already started, and failing it at this point would report a
+// problem about something that has already succeeded.
+func (s *Store) MarkConnectionUsed(id string) error {
+	if _, err := s.db.Exec(
+		`UPDATE connections SET last_used_at = ? WHERE id = ?`, s.now(), id,
+	); err != nil {
+		return fmt.Errorf("mark connection used: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) DeleteConnection(id string) error {

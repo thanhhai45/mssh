@@ -17,6 +17,7 @@ export namespace store {
 	    sortOrder: number;
 	    createdAt: number;
 	    updatedAt: number;
+	    lastUsedAt: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Connection(source);
@@ -40,6 +41,7 @@ export namespace store {
 	        this.sortOrder = source["sortOrder"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
+	        this.lastUsedAt = source["lastUsedAt"];
 	    }
 	}
 	export class ConnectionInput {
