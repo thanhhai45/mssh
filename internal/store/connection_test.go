@@ -317,6 +317,9 @@ func TestParseSSHCommand(t *testing.T) {
 			in:   "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no ec2-user@1.2.3.4",
 			want: ParsedSSHCommand{Username: "ec2-user", Host: "1.2.3.4", Port: 22, KeyPath: "~/.ssh/id_ed25519"},
 		},
+		// macOS capitalises the first word of a text field. Before EqualFold
+		// this parsed to Host "Ssh" and no username at all, without complaining.
+		{in: "Ssh -p 2298 thinhvu@115.73.222.79", want: ParsedSSHCommand{Username: "thinhvu", Host: "115.73.222.79", Port: 2298}},
 		{in: "ssh -p notanumber deploy@host", wantErr: true},
 		{in: "ssh -p 22", wantErr: true},
 		{in: "", wantErr: true},

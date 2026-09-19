@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -78,7 +79,7 @@ func (sshDialer) Dial(
 		tcpConnection, address, clientConfig, 15*time.Second)
 	if err != nil {
 		tcpConnection.Close()
-		return nil, fmt.Errorf("ssh handshake with %s: %w", address, err)
+		return nil, errors.New(explainHandshakeFailure(address, err))
 	}
 
 	client := ssh.NewClient(sshConnection, channels, requests)

@@ -435,7 +435,13 @@ func ParseSSHCommand(cmd string) (ParsedSSHCommand, error) {
 	var out ParsedSSHCommand
 
 	fields := strings.Fields(cmd)
-	if len(fields) > 0 && fields[0] == "ssh" {
+
+	// EqualFold, not ==. macOS capitalises the first word typed into a text
+	// field, so this arrives as "Ssh" often enough to matter — and the failure
+	// is silent: an unrecognised first word is treated as the destination, the
+	// real user@host after it is taken for a remote command, and the result is
+	// a connection to a machine called "Ssh".
+	if len(fields) > 0 && strings.EqualFold(fields[0], "ssh") {
 		fields = fields[1:]
 	}
 

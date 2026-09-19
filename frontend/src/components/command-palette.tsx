@@ -132,6 +132,12 @@ export function CommandPalette() {
                         ref={inputRef}
                         value={query}
                         placeholder="Go to connection…"
+                        // A raw input, so it does not inherit the defaults the
+                        // shared Input sets. Same reason: host names are not
+                        // sentences.
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                         className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                         onChange={(event) => setQuery(event.target.value)}
                         onKeyDown={(event) => {

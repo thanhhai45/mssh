@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -140,6 +141,71 @@ func (session *sshSession) Close() error {
 		closeErr = session.client.Close()
 	})
 	return closeErr
+}
+
+// explainHandshakeFailure turns x/crypto's handshake errors into something that
+// says what to do next.
+//
+// "ssh: handshake failed" covers everything from the version exchange to the
+// last authentication attempt, so problems with nothing in common arrive under
+// the same two words. Worse, the most common one arrives as the bare text
+// "EOF", which reads like a bug in this app when it is the server hanging up.
+//
+// A pure function, so the mapping can be tested without a server.
+func explainHandshakeFailure(address string, err error) string {
+	host := address
+	if hostOnly, _, splitErr := net.SplitHostPort(address); splitErr == nil {
+		host = hostOnly
+	}
+
+	lowered := strings.ToLower(err.Error())
+
+	switch {
+	case errors.Is(err, io.EOF),
+		strings.Contains(lowered, "eof"),
+		strings.Contains(lowered, "connection reset by peer"),
+		strings.Contains(lowered, "broken pipe"):
+		return fmt.Sprintf(
+			"%s accepted the connection and then hung up in the middle of the "+
+				"handshake.\n\n"+
+				"That is the server's decision, not a fault in the SSH "+
+				"conversation. Most often it is rate limiting after a few failed "+
+				"logins — fail2ban and sshd's own limits both do this, and both "+
+				"let go after some minutes. Run `ssh -p %s %s` in a terminal: if "+
+				"that is refused too, the block is on the server and waiting is "+
+				"the fix.",
+			host, portOf(address), host)
+
+	case strings.Contains(lowered, "unable to authenticate"):
+		return fmt.Sprintf(
+			"%s refused the credentials.\n\n"+
+				"Check the username character for character — macOS likes to "+
+				"capitalise the first letter of a field, and `Deploy` is not "+
+				"`deploy`. If this connection uses a password, the server may also "+
+				"have password logins turned off.\n\n%s",
+			host, err)
+
+	case strings.Contains(lowered, "no common algorithm"),
+		strings.Contains(lowered, "no common algo"):
+		return fmt.Sprintf(
+			"%s and mssh could not agree on an encryption algorithm — the server "+
+				"is probably old enough that Go's SSH library no longer speaks to "+
+				"it. Use the System SSH kind for this one: it runs the real ssh "+
+				"command, which still supports the older algorithms.\n\n%s",
+			host, err)
+
+	default:
+		return fmt.Sprintf("ssh handshake with %s: %v", address, err)
+	}
+}
+
+// portOf pulls the port back out of a host:port, for printing a command the
+// user can paste. An address without one falls back to the default.
+func portOf(address string) string {
+	if _, port, err := net.SplitHostPort(address); err == nil {
+		return port
+	}
+	return "22"
 }
 
 // handshake runs the client handshake under a deadline.
