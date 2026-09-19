@@ -143,6 +143,31 @@ func (session *sshSession) Close() error {
 	return closeErr
 }
 
+// droppedBeforeAuth reports whether the server hung up before authentication
+// began, rather than refusing the credentials.
+//
+// The distinction is what makes retrying safe. A connection turned away by
+// MaxStartups never got as far as the version exchange, so no username and no
+// password ever left this machine and trying again costs the account nothing.
+// A rejected password is the opposite: repeating it is how accounts get locked.
+//
+// x/crypto reports all of this as "EOF", because it is looking for a line
+// beginning "SSH-" and sshd sends the words "Exceeded MaxStartups" instead.
+func droppedBeforeAuth(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+
+	lowered := strings.ToLower(err.Error())
+	return strings.Contains(lowered, "eof") ||
+		strings.Contains(lowered, "connection reset by peer") ||
+		strings.Contains(lowered, "broken pipe") ||
+		strings.Contains(lowered, "exceeded maxstartups")
+}
+
 // explainHandshakeFailure turns x/crypto's handshake errors into something that
 // says what to do next.
 //
@@ -161,20 +186,21 @@ func explainHandshakeFailure(address string, err error) string {
 	lowered := strings.ToLower(err.Error())
 
 	switch {
-	case errors.Is(err, io.EOF),
-		strings.Contains(lowered, "eof"),
-		strings.Contains(lowered, "connection reset by peer"),
-		strings.Contains(lowered, "broken pipe"):
+	case droppedBeforeAuth(err):
 		return fmt.Sprintf(
-			"%s accepted the connection and then hung up in the middle of the "+
-				"handshake.\n\n"+
-				"That is the server's decision, not a fault in the SSH "+
-				"conversation. Most often it is rate limiting after a few failed "+
-				"logins — fail2ban and sshd's own limits both do this, and both "+
-				"let go after some minutes. Run `ssh -p %s %s` in a terminal: if "+
-				"that is refused too, the block is on the server and waiting is "+
-				"the fix.",
-			host, portOf(address), host)
+			"%s refused the connection before the SSH handshake started, %d times "+
+				"in a row.\n\n"+
+				"sshd does this when too many half-finished logins are already in "+
+				"flight: its MaxStartups setting turns away a share of new "+
+				"connections at random rather than queueing them, answering with "+
+				"\"Exceeded MaxStartups\" instead of a version banner. On a machine "+
+				"reachable from the internet that queue is usually full of bots "+
+				"rather than of you, so the refusals come and go for no reason you "+
+				"can see.\n\n"+
+				"mssh already retried. If it keeps happening, whoever runs %s can "+
+				"raise MaxStartups in /etc/ssh/sshd_config, or put fail2ban in "+
+				"front of port %s to keep the bots out of the queue.",
+			host, preAuthDropAttempts, host, portOf(address))
 
 	case strings.Contains(lowered, "unable to authenticate"):
 		return fmt.Sprintf(

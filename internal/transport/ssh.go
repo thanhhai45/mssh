@@ -69,19 +69,71 @@ func (sshDialer) Dial(
 
 	address := net.JoinHostPort(config.Target, strconv.Itoa(config.Port))
 
-	var tcpDialer net.Dialer
-	tcpConnection, err := tcpDialer.DialContext(dialContext, "tcp", address)
+	sshConnection, channels, requests, err := dialAndHandshake(
+		dialContext, address, clientConfig)
 	if err != nil {
-		return nil, fmt.Errorf("reach %s: %w", address, err)
-	}
-
-	sshConnection, channels, requests, err := handshake(
-		tcpConnection, address, clientConfig, 15*time.Second)
-	if err != nil {
-		tcpConnection.Close()
-		return nil, errors.New(explainHandshakeFailure(address, err))
+		return nil, err
 	}
 
 	client := ssh.NewClient(sshConnection, channels, requests)
 	return startShell(client, size, onOutput, onExit)
+}
+
+const (
+	// preAuthDropAttempts is how many times a connection turned away before
+	// authentication is tried again.
+	preAuthDropAttempts = 3
+	// preAuthDropPause gives the server's startup queue a moment to drain.
+	preAuthDropPause = 1500 * time.Millisecond
+	// handshakeLimit bounds the whole handshake, since ClientConfig.Timeout
+	// only applies to ssh.Dial, which this file does not use.
+	handshakeLimit = 15 * time.Second
+)
+
+// dialAndHandshake opens the TCP connection and runs the SSH handshake, trying
+// again while the server hangs up before authentication.
+//
+// The retry exists because sshd's MaxStartups refuses a *random share* of new
+// connections whenever its queue of unauthenticated logins is full — so on a
+// server exposed to the internet, roughly a third of attempts can fail for
+// reasons that have nothing to do with the user, and succeed a second later.
+// Only pre-authentication drops are retried; see droppedBeforeAuth.
+func dialAndHandshake(
+	dialContext context.Context,
+	address string,
+	clientConfig *ssh.ClientConfig,
+) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= preAuthDropAttempts; attempt++ {
+		if attempt > 1 {
+			select {
+			case <-dialContext.Done():
+				return nil, nil, nil, dialContext.Err()
+			case <-time.After(preAuthDropPause):
+			}
+		}
+
+		var tcpDialer net.Dialer
+		tcpConnection, err := tcpDialer.DialContext(dialContext, "tcp", address)
+		if err != nil {
+			// A refused or unroutable address will not fix itself in 1.5s.
+			return nil, nil, nil, fmt.Errorf("reach %s: %w", address, err)
+		}
+
+		sshConnection, channels, requests, err := handshake(
+			tcpConnection, address, clientConfig, handshakeLimit)
+		if err == nil {
+			return sshConnection, channels, requests, nil
+		}
+
+		tcpConnection.Close()
+		lastErr = err
+
+		if !droppedBeforeAuth(err) {
+			break
+		}
+	}
+
+	return nil, nil, nil, errors.New(explainHandshakeFailure(address, lastErr))
 }

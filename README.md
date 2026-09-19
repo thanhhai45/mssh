@@ -338,6 +338,8 @@ frontend/src/
 |---|---|
 | `... has never been connected to from this machine` | Connect once with `ssh` — see the section above |
 | `the host key ... has CHANGED` | Stop and verify with the server's owner |
+| `refused the connection before the SSH handshake started` | sshd's `MaxStartups` turned you away because its queue of unauthenticated logins was full — on a public server that queue is mostly bots. mssh retries three times on its own; if it still fails, raise `MaxStartups` in `/etc/ssh/sshd_config` or put fail2ban in front of the port |
+| `refused the credentials` | Check the username character for character, and whether the server allows password logins at all |
 | `ssh-agent is not running` | Start it, or switch the connection to a key file or password |
 | `key ... is protected by a passphrase` | `ssh-add <key>`, then use the SSH agent method |
 | `the Session Manager plugin is not installed` | `brew install --cask session-manager-plugin` |
