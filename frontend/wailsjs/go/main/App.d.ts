@@ -14,9 +14,13 @@ export function DeleteConnection(arg1:string):Promise<void>;
 
 export function DeleteConnectionPassword(arg1:string):Promise<void>;
 
+export function DeleteSetting(arg1:string):Promise<void>;
+
 export function DeleteWorkspace(arg1:string):Promise<void>;
 
 export function DisconnectSession(arg1:string):Promise<void>;
+
+export function GetAllSettings():Promise<Record<string, string>>;
 
 export function GetConnection(arg1:string):Promise<store.Connection>;
 
@@ -41,6 +45,8 @@ export function ResizeSession(arg1:string,arg2:number,arg3:number):Promise<void>
 export function ResolveAWSForConnection(arg1:string):Promise<store.ResolvedAWS>;
 
 export function SetConnectionPassword(arg1:string,arg2:string):Promise<void>;
+
+export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
 export function UpdateConnection(arg1:string,arg2:store.ConnectionInput):Promise<store.Connection>;
 

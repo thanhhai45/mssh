@@ -1,5 +1,6 @@
 import {FitAddon} from '@xterm/addon-fit'
-import {Terminal} from '@xterm/xterm'
+import {SearchAddon, type ISearchResultChangeEvent} from '@xterm/addon-search'
+import {Terminal, type ITerminalOptions} from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
 import {api, onSessionOutput} from '@/lib/api'
@@ -16,6 +17,7 @@ type TerminalEntry = {
     node: HTMLDivElement
     terminal: Terminal
     fit: FitAddon
+    search: SearchAddon
     /** Removes the Wails output listener. */
     stopListening: () => void
     /** xterm can only measure itself once it is in the document. */
@@ -24,28 +26,39 @@ type TerminalEntry = {
 
 const entries = new Map<string, TerminalEntry>()
 
-// Hardcoded for now; buổi 13 moves these into settings.
-const TERMINAL_OPTIONS = {
-    convertEol: false,
-    fontSize: 13,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    cursorBlink: true,
-    scrollback: 10_000,
-    theme: {
-        background: '#09090b',
-        foreground: '#e4e4e7',
-        cursor: '#e4e4e7',
-    },
-} as const
+let terminalOptions: ITerminalOptions = {
+  convertEol: false,
+  fontSize: 13,
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  lineHeight: 1.2,
+  cursorStyle: 'block',
+  cursorBlink: true,
+  scrollback: 10_000,
+}
+
+export function applyTerminalSettings(options: ITerminalOptions): void {
+  terminalOptions = {...terminalOptions, ...options}
+
+  for (const [connectionId, entry] of entries) {
+    entry.terminal.options = options
+    resizeTerminal(connectionId)
+  }
+}
 
 function create(connectionId: string): TerminalEntry {
     const node = document.createElement('div')
     node.style.width = '100%'
     node.style.height = '100%'
 
-    const terminal = new Terminal(TERMINAL_OPTIONS)
+    const terminal = new Terminal(terminalOptions)
     const fit = new FitAddon()
     terminal.loadAddon(fit)
+
+    // One search addon per terminal, not one per find bar: the matches and the
+    // current position belong to the scrollback, which outlives every
+    // component that might want to look at it.
+    const search = new SearchAddon()
+    terminal.loadAddon(search)
 
     // Keystrokes go straight to Go. Typing into a session that is not open
     // fails, and that is fine: there is nothing useful to say about it.
@@ -53,11 +66,21 @@ function create(connectionId: string): TerminalEntry {
         void api.writeToSession(connectionId, data).catch(() => {})
     })
 
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') return true
+      
+      if (event.metaKey && event.key === 'k') {
+        clearTerminal(connectionId)
+        return false
+      }
+      return true
+    })
+
     const stopListening = onSessionOutput(connectionId, (chunk: any) => {
         terminal.write(chunk)
     })
 
-    const entry: TerminalEntry = {node, terminal, fit, stopListening, opened: false}
+    const entry: TerminalEntry = {node, terminal, fit, search, stopListening, opened: false}
     entries.set(connectionId, entry)
     return entry
 }
@@ -138,7 +161,75 @@ export function terminalSize(connectionId: string): {cols: number; rows: number}
 * reconnect starts clean while the node stays attached to the page.
 */
 export function resetTerminal(connectionId: string): void {
-  const entry = entries.get(connectionId)
-  if (!entry) return
-  entry.terminal.reset()
+    const entry = entries.get(connectionId)
+    if (!entry) return
+    entry.terminal.reset()
+}
+
+export function clearTerminal(connectionId: string): void {
+    const entry = entries.get(connectionId)
+    if (!entry) return
+    entry.terminal.clear()
+}
+
+export function focusTerminal(connectionId: string): void {
+    entries.get(connectionId)?.terminal.focus()
+}
+
+/**
+ * Colour for search highlights
+ * Fixed on purpose rather than take from the terminal theme: a highlights has
+ * to stand out against the theme, not agree with it. The two overview-ruler
+ * fields are the only ones the addon's types make required - its way of saying
+ * that a match you cannot spot on the scrollbar is half a search
+ */
+
+const SEARCH_DECORATIONS = {
+    matchBackground: '#3b4a63',
+    matchOverviewRuler: '#3b4a63',
+    activeMatchBackground: '#8a6d00',
+    activeMatchColorOverviewRuler: '#e3b341',
+}
+
+export type TerminalSearchRequest = {
+    term: string
+    direction: 'next' | 'previous'
+    incremental: boolean
+}
+
+export function findInTerminal(connectionId: string, request: TerminalSearchRequest): void {
+    const entry = entries.get(connectionId)
+    if(!entry) return
+  
+    if (request.term === '') {
+        entry.search.clearDecorations()
+        return
+    }
+    
+    const options = {
+        decorations: SEARCH_DECORATIONS,
+        incremental: request.incremental,
+    }
+    
+    if (request.direction === 'next') {
+        entry.search.findNext(request.term, options)
+    } else {
+        entry.search.findPrevious(request.term, options)
+    }
+}
+
+/** Removes the highlights. The scrollback is not youch */
+export function clearTerminalSearch(connectionId: string): void {
+    const entry = entries.get(connectionId)
+    if (!entry) return
+    entry.search.clearDecorations()
+}
+
+export function onTerminalSearchResults(
+    connectionId: string,
+    handler: (results: ISearchResultChangeEvent) => void,
+): () => void {
+    const entry = entries.get(connectionId) ?? create(connectionId)
+    const subscription = entry.search.onDidChangeResults(handler)
+    return () => subscription.dispose()
 }

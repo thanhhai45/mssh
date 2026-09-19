@@ -3,7 +3,6 @@ package transport
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 )
@@ -46,7 +45,7 @@ func (sshConfigDialer) Dial(
 	alias := strings.TrimSpace(config.Target)
 
 	command := exec.CommandContext(dialContext, "ssh", alias)
-	command.Env = os.Environ()
+	command.Env = pseudoTerminalEnvironment()
 
 	return startPTYProcess(command, size, onOutput, onExit, func(output string) string {
 		return explainSSHCommandFailure(alias, output)

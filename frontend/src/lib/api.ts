@@ -174,6 +174,10 @@ export const api = {
   disconnectSession: (id: string): Promise<void> => App.DisconnectSession(id),
   openSessionIds: (): Promise<string[]> => App.OpenSessionIDs(),
   checkSSMTools: (): Promise<void> => App.CheckSSMTools(),
+
+  getAllSettings: ():Promise<Record<string, string>> => App.GetAllSettings(),
+  setSetting: (key: string, value: string): Promise<void> => App.SetSetting(key, value),
+  deleteSetting: (key: string): Promise<void> => App.DeleteSetting(key)
 };
 
 /* ---------------- Events ---------------- */

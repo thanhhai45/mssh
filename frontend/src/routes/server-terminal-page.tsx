@@ -1,8 +1,9 @@
-import {useState} from 'react'
+import {useEffect, useState} from 'react'
 import {useParams} from '@tanstack/react-router'
-import {Plug, PlugZap} from 'lucide-react'
+import {Eraser, Plug, PlugZap, Search} from 'lucide-react'
 
 import {PasswordDialog} from '@/components/password-dialog'
+import {TerminalFindBar} from '@/components/terminal-find-bar'
 import {XtermView} from '@/components/xterm-view'
 import {Badge} from '@/components/ui/badge'
 import {Button} from '@/components/ui/button'
@@ -16,7 +17,12 @@ import {
     type SessionState,
 } from '@/lib/api'
 import {useSessionStatus} from '@/lib/session-status-store'
-import {resetTerminal, terminalSize} from '@/lib/terminal-session'
+import {
+    clearTerminal,
+    focusTerminal,
+    resetTerminal,
+    terminalSize,
+} from '@/lib/terminal-session'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
 
@@ -36,6 +42,23 @@ export function ServerTerminalPage() {
     const [error, setError] = useState<string | null>(null)
     const [passwordHint, setPasswordHint] = useState<string | undefined>(undefined)
     const [askingPassword, setAskingPassword] = useState(false)
+    const [finding, setFinding] = useState(false)
+
+    // ⌘F lives here, not in the terminal module, because opening a panel is
+    // React's business — a terminal has no idea a find bar exists. The key
+    // reaches this listener untouched: xterm leaves ⌘-combinations alone on
+    // macOS, which is also why ⌘C and ⌘V still work inside it.
+    useEffect(() => {
+        function handleKeyDown(event: KeyboardEvent) {
+            if (event.metaKey && event.key === 'f') {
+                event.preventDefault()
+                setFinding(true)
+            }
+        }
+
+        document.addEventListener('keydown', handleKeyDown)
+        return () => document.removeEventListener('keydown', handleKeyDown)
+    }, [])
 
     const workspace = workspaces.find((candidate) => candidate.id === workspaceId)
     const connection = (connections[workspaceId ?? ''] ?? []).find(
@@ -129,18 +152,37 @@ export function ServerTerminalPage() {
                         {state ? ` · ${STATE_LABEL[state]}` : ''}
                     </p>
                 </div>
-
-                {isConnected ? (
-                    <Button variant="outline" onClick={disconnect} disabled={busy}>
-                        <PlugZap/>
-                        {busy ? 'Disconnecting…' : 'Disconnect'}
+                {/* One child, not three: the parent uses justify-between, which
+                    spaces its direct children apart. */}
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="ghost"
+                        onClick={() => setFinding(true)}
+                        title="Find in terminal (⌘F)"
+                    >
+                        <Search/>
+                        Find
                     </Button>
-                ) : (
-                    <Button onClick={() => connect('')} disabled={busy || isConnecting}>
-                        <Plug/>
-                        {busy || isConnecting ? 'Connecting…' : 'Connect'}
+                    <Button
+                        variant="ghost"
+                        onClick={() => clearTerminal(connection.id)}
+                        title="Clear the terminal (⌘K)"
+                    >
+                        <Eraser/>
+                        Clear
                     </Button>
-                )}
+                    {isConnected ? (
+                        <Button variant="outline" onClick={disconnect} disabled={busy}>
+                            <PlugZap/>
+                            {busy ? 'Disconnecting…' : 'Disconnect'}
+                        </Button>
+                    ) : (
+                        <Button onClick={() => connect('')} disabled={busy || isConnecting}>
+                            <Plug/>
+                            {busy || isConnecting ? 'Connecting…' : 'Connect'}
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {error && (
@@ -154,7 +196,19 @@ export function ServerTerminalPage() {
                 </p>
             )}
 
-            <div className="h-[65vh] min-h-[360px] overflow-hidden rounded-lg border bg-[#09090b] p-3">
+            {finding && (
+                <TerminalFindBar
+                    connectionId={connection.id}
+                    onClose={() => {
+                        setFinding(false)
+                        // Without this the keyboard is left on an input that no
+                        // longer exists, and typing goes nowhere.
+                        focusTerminal(connection.id)
+                    }}
+                />
+            )}
+
+            <div className="h-[75vh] min-h-[360px] overflow-hidden rounded-lg border bg-[var(--terminal-background)] p-3">
                 <XtermView connectionId={connection.id}/>
             </div>
 

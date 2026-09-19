@@ -56,10 +56,22 @@ xattr -dr com.apple.quarantine /Applications/mssh.app
   Session Manager.
 - **Sessions that survive navigation** — switch to another connection and back;
   your scrollback, working directory and running `top` are all still there.
-- **Real terminal** — a full pty, so `vim`, `htop` and colours work, and the
-  remote shell follows the window when you resize it.
+- **Real terminal** — a full pty with `TERM=xterm-256color`, so `vim`, `htop`,
+  `clear` and colours all work, and the remote shell follows the window when you
+  resize it.
+- **Search the scrollback** — `⌘F` finds text anywhere in the session, with every
+  match highlighted and a running count.
+- **Appearance you choose** — five terminal colour presets, font family, size,
+  line height and cursor style, applied to live sessions without reconnecting.
 - **Local SQLite database** — everything lives on your machine. No account, no
   sync, no telemetry.
+
+### Keyboard shortcuts
+
+| Key | Does |
+| --- | --- |
+| `⌘F` | Find in the terminal. `⏎` next match, `⇧⏎` previous, `Esc` close. |
+| `⌘K` | Clear the terminal, iTerm2 style — local only, the remote shell is not told. |
 
 ---
 

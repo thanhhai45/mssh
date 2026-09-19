@@ -257,3 +257,19 @@ func (app *App) emitSessionStatus(connectionID string, state string, message str
 func (app *App) CheckSSMTools() error {
 	return transport.CheckSSMTools()
 }
+
+/*------------------ Settings ----------------------------------*/
+// GetSetting
+func (app *App) GetAllSettings() (map[string]string, error) {
+	return app.store.GetAllSettings()
+}
+
+// SetSetting
+func (app *App) SetSetting(key string, value string) error {
+	return app.store.SetSetting(key, value)
+}
+
+// DeleteSetting
+func (app *App) DeleteSetting(key string) error {
+	return app.store.DeleteSetting(key)
+}

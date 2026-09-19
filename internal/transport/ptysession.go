@@ -70,6 +70,23 @@ func startPTYProcess(
 	return session, nil
 }
 
+// The plain ssh kind never had the problem because it names the terminal itself
+// in RequestPty. This is the same decision, one layer down.
+func pseudoTerminalEnvironment() []string {
+	current := os.Environ()
+
+	kept := make([]string, 0, len(current)+1)
+	for _, variable := range current {
+		if strings.HasPrefix(variable, "TERM=") {
+			continue
+		}
+
+		kept = append(kept, variable)
+	}
+
+	return append(kept, "TERM=xterm-256color")
+}
+
 // ptySession is one child process attached to a pseudo-terminal.
 type ptySession struct {
 	command  *exec.Cmd
