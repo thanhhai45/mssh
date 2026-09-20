@@ -27,6 +27,11 @@ type TerminalEntry = {
 const entries = new Map<string, TerminalEntry>()
 
 let terminalOptions: ITerminalOptions = {
+  // Required by the search addon's highlighting: it marks matches with
+  // registerDecoration, which xterm still classes as proposed API and refuses
+  // to run without this. Without it every findNext call throws, and the find
+  // bar reports "No matches" for text plainly on the screen.
+  allowProposedApi: true,
   convertEol: false,
   fontSize: 13,
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
