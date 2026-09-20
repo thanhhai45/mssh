@@ -13,7 +13,7 @@ import {
     type SessionState,
 } from '@/lib/api'
 import {accentTextClass, accentTintClass, swatchClass} from '@/lib/colors'
-import {kindIcon} from '@/lib/kind-icons'
+import {KindIcon} from '@/components/kind-icon'
 import {relativeTime} from '@/lib/relative-time'
 import {useSessionStatus} from '@/lib/session-status-store'
 import {cn} from '@/lib/utils'
@@ -124,7 +124,6 @@ function RecentRow({
     workspaceName: string
     state: SessionState | undefined
 }) {
-    const Icon = kindIcon(connection.kind)
 
     return (
         <Link
@@ -134,7 +133,10 @@ function RecentRow({
             params={{workspaceId: connection.workspaceId, serverId: connection.id}}
             className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent"
         >
-            <Icon className={cn('size-4 shrink-0', accentTextClass(workspaceColor))}/>
+            <KindIcon
+                kind={connection.kind}
+                className={cn('size-4 shrink-0', accentTextClass(workspaceColor))}
+            />
             <div className="flex min-w-0 flex-1 flex-col leading-tight">
                 <span className="truncate text-sm font-medium">{connection.name}</span>
                 <span className="truncate text-xs text-muted-foreground">
@@ -203,14 +205,13 @@ function WorkspaceCard({
                 ) : (
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                         {[...byKind].map(([kind, count]) => {
-                            const Icon = kindIcon(kind)
                             return (
                                 <span
                                     key={kind}
                                     className="flex items-center gap-1.5 text-sm text-muted-foreground"
                                     title={kindMeta(kind).label}
                                 >
-                                    <Icon className="size-4"/>
+                                    <KindIcon kind={kind} className="size-4"/>
                                     <span className="tabular-nums">{count}</span>
                                 </span>
                             )

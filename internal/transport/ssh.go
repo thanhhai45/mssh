@@ -127,7 +127,7 @@ func dialAndHandshake(
 			return sshConnection, channels, requests, nil
 		}
 
-		tcpConnection.Close()
+		_ = tcpConnection.Close()
 		lastErr = err
 
 		if !droppedBeforeAuth(err) {

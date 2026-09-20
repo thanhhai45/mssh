@@ -51,7 +51,13 @@ export function WorkspacesProvider({children}: {children: React.ReactNode}) {
         }
     }, []);
 
+    // Load once on mount. The rule below fires because refresh() eventually
+    // calls setState, but it does so only after awaiting the first call to Go —
+    // there is no synchronous setState here and so no cascading render. This is
+    // the plain "fetch on mount" shape, and short of adding a data-fetching
+    // library there is no way to write it that the rule accepts.
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         void refresh();
     }, [refresh]);
 

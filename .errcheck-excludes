@@ -1,0 +1,15 @@
+# Functions whose error is safe to drop, by contract rather than by habit.
+#
+# Everything not listed here must say so in the code with `_ =`, so that
+# ignoring an error is always a visible decision rather than an oversight.
+
+# Rows.Close is idempotent and is also called by a fully drained iteration.
+# Anything that went wrong while reading has already come back from rows.Err().
+(*database/sql.Rows).Close
+
+# A deferred Rollback after a successful Commit returns sql.ErrTxDone. That is
+# the documented way to write the pattern, not a failure.
+(*database/sql.Tx).Rollback
+
+# Stmt.Close reports only problems with a statement we have finished using.
+(*database/sql.Stmt).Close

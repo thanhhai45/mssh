@@ -58,14 +58,14 @@ func (ssmSSHDialer) Dial(
 
 	authMethods, releaseAuth, err := sshAuthMethods(config)
 	if err != nil {
-		tunnel.Close()
+		_ = tunnel.Close()
 		return nil, err
 	}
 	defer releaseAuth()
 
 	hostKeyCallback, err := hostKeyCallbackFor(config.KnownHostsPath)
 	if err != nil {
-		tunnel.Close()
+		_ = tunnel.Close()
 		return nil, err
 	}
 
@@ -86,7 +86,7 @@ func (ssmSSHDialer) Dial(
 		// rather than instead of it: stderr also carries harmless warnings, and
 		// those must not be mistaken for the reason the handshake failed.
 		awsComplaint := strings.TrimSpace(tunnel.problems.string())
-		tunnel.Close()
+		_ = tunnel.Close()
 
 		if awsComplaint != "" {
 			return nil, fmt.Errorf(
@@ -200,10 +200,10 @@ func (connection *processConn) Write(payload []byte) (int, error) {
 func (connection *processConn) Close() error {
 	var closeErr error
 	connection.closeOnce.Do(func() {
-		connection.writer.Close()
-		connection.reader.Close()
+		_ = connection.writer.Close()
+		_ = connection.reader.Close()
 		if connection.command.Process != nil {
-			connection.command.Process.Kill()
+			_ = connection.command.Process.Kill()
 		}
 		// Wait reaps the process and waits for the goroutine copying stderr.
 		// After Kill it always reports "signal: killed", which is the expected

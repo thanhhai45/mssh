@@ -81,7 +81,7 @@ function create(connectionId: string): TerminalEntry {
       return true
     })
 
-    const stopListening = onSessionOutput(connectionId, (chunk: any) => {
+    const stopListening = onSessionOutput(connectionId, (chunk) => {
         terminal.write(chunk)
     })
 

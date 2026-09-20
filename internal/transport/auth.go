@@ -52,7 +52,7 @@ func agentAuthMethods() ([]ssh.AuthMethod, func(), error) {
 	agentClient := agent.NewClient(agentConnection)
 	methods := []ssh.AuthMethod{ssh.PublicKeysCallback(agentClient.Signers)}
 
-	return methods, func() { agentConnection.Close() }, nil
+	return methods, func() { _ = agentConnection.Close() }, nil
 }
 
 func keyAuthMethods(keyPath string) ([]ssh.AuthMethod, error) {

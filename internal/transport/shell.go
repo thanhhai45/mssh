@@ -21,7 +21,7 @@ func startShell(
 	onExit func(error),
 ) (Session, error) {
 	failWith := func(what string, err error) (Session, error) {
-		client.Close()
+		_ = client.Close()
 		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 
@@ -32,19 +32,19 @@ func startShell(
 
 	standardInput, err := remoteSession.StdinPipe()
 	if err != nil {
-		remoteSession.Close()
+		_ = remoteSession.Close()
 		return failWith("attach stdin", err)
 	}
 
 	standardOutput, err := remoteSession.StdoutPipe()
 	if err != nil {
-		remoteSession.Close()
+		_ = remoteSession.Close()
 		return failWith("attach stdout", err)
 	}
 
 	standardError, err := remoteSession.StderrPipe()
 	if err != nil {
-		remoteSession.Close()
+		_ = remoteSession.Close()
 		return failWith("attch stderr", err)
 	}
 
@@ -59,11 +59,11 @@ func startShell(
 	if err := remoteSession.RequestPty(
 		"xterm-256color", int(size.Rows), int(size.Cols), terminalModes,
 	); err != nil {
-		remoteSession.Close()
+		_ = remoteSession.Close()
 		return failWith("request a terminal: ", err)
 	}
 	if err := remoteSession.Shell(); err != nil {
-		remoteSession.Close()
+		_ = remoteSession.Close()
 		return failWith("start the remote shell: ", err)
 	}
 
@@ -93,7 +93,7 @@ func startShell(
 					"- usually an idle timeout, a reboot, or network dropping")
 		}
 
-		session.Close()
+		_ = session.Close()
 		onExit(exitErr)
 	}()
 
@@ -136,8 +136,8 @@ func (session *sshSession) Resize(size Size) error {
 func (session *sshSession) Close() error {
 	var closeErr error
 	session.closeOnce.Do(func() {
-		session.standardInput.Close()
-		session.remoteSession.Close()
+		_ = session.standardInput.Close()
+		_ = session.remoteSession.Close()
 		closeErr = session.client.Close()
 	})
 	return closeErr

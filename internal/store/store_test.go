@@ -13,7 +13,7 @@ func openTest(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -146,13 +146,13 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Open: %v", err)
 	}
-	first.Close()
+	_ = first.Close()
 
 	second, err := Open(path)
 	if err != nil {
 		t.Fatalf("second Open: %v", err)
 	}
-	defer second.Close()
+	defer func() { _ = second.Close() }()
 
 	var count int
 	if err := second.db.QueryRow(`SELECT COUNT(*) FROM workspaces`).Scan(&count); err != nil {

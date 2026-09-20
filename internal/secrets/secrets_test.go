@@ -10,7 +10,7 @@ func vaultBehaviour(t *testing.T, v Vault) {
 	t.Helper()
 
 	const id = "test-connection-id"
-	t.Cleanup(func() { v.Delete(id) })
+	t.Cleanup(func() { _ = v.Delete(id) })
 
 	if v.Has(id) {
 		t.Fatalf("Has reported a secret before anything was stored")

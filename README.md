@@ -292,14 +292,42 @@ injected there, so `window.go` will be undefined.
 ### Tests and checks
 
 ```bash
-go test ./...            # store, secrets and transport
-go vet ./...
+go test ./internal/...   # store, secrets and transport
+go vet ./internal/...
 gofmt -l .
 ```
 
+> `./internal/...` rather than `./...`: package `main` embeds `frontend/dist`,
+> which does not exist until `wails build` has run.
+
+`errcheck` finds ignored errors, which the compiler does not:
+
 ```bash
-cd frontend && npm run build   # runs tsc, then vite build
+go install github.com/kisielk/errcheck@latest
+errcheck -exclude .errcheck-excludes ./internal/...
 ```
+
+Ignoring an error is allowed, but it has to be written down — `_ = f()` — so
+that it reads as a decision rather than an oversight. `.errcheck-excludes` lists
+the handful of `database/sql` methods whose error is meaningless by contract,
+with the reason next to each.
+
+Frontend:
+
+```bash
+cd frontend
+npm run typecheck   # tsc --noEmit
+npm run lint        # eslint
+npm run build       # tsc, then vite build
+```
+
+ESLint is here mainly for `react-hooks/exhaustive-deps` and
+`react-hooks/set-state-in-effect`, which catch the class of bug TypeScript
+cannot see: a hook reading a value it never declared, and so quietly using a
+stale one. The `react-refresh/only-export-components` warnings are expected —
+several modules deliberately export a hook next to its provider.
+
+All of this runs on every push through `.github/workflows/check.yml`.
 
 ### Regenerating the frontend bindings
 

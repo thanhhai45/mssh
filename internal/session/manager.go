@@ -124,9 +124,12 @@ func (manager *Manager) CloseAll() {
 	manager.sessions = make(map[string]transport.Session)
 	manager.mutex.Unlock()
 
+	// This runs on the way out of the application. One session refusing to
+	// close must not stop the others from being closed, and there is nobody
+	// left to tell about it either way.
 	for _, session := range open {
 		if session != nil {
-			session.Close()
+			_ = session.Close()
 		}
 	}
 }

@@ -42,7 +42,7 @@ import {
     type Workspace,
 } from '@/lib/api'
 import {accentEdgeClass, swatchClass} from '@/lib/colors'
-import {kindIcon} from '@/lib/kind-icons'
+import {KindIcon} from '@/components/kind-icon'
 import { useSessionStatus } from '@/lib/session-status-store'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
@@ -200,7 +200,6 @@ export function WorkspaceNav() {
                                     <SidebarMenuSub>
                                         {list.map((connection) => {
                                             const to = `${groupPath}/servers/${connection.id}`
-                                            const KindIcon = kindIcon(connection.kind)
                                             return (
                                                 <SidebarMenuSubItem
                                                     key={connection.id}
@@ -213,7 +212,7 @@ export function WorkspaceNav() {
                                                     >
                                                         <Link to={to}>
                                                             <span className={cn('size-1.5 shrink-0 rounded-full transition-colors duration-200', sessionDotClass(stateOf(connection.id)))}/>
-                                                            <KindIcon className="size-3.5 shrink-0 text-muted-foreground"/>
+                                                            <KindIcon kind={connection.kind} className="size-3.5 shrink-0 text-muted-foreground"/>
                                                             <div className="flex min-w-0 flex-col leading-tight">
                                                                 <span className="truncate">
                                                                     {connection.name}

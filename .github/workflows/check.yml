@@ -1,0 +1,53 @@
+name: check
+
+# Every push and every pull request, unlike release.yml which only runs on a
+# tag. The point is to find out before cutting a version, not after.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Vet
+        run: go vet ./internal/...
+
+      - name: Test
+        # Not ./... — package main cannot compile until wails build has created
+        # frontend/dist, which go:embed needs. Every test lives under internal/.
+        run: go test ./internal/...
+
+      - name: errcheck
+        run: |
+          go install github.com/kisielk/errcheck@latest
+          "$(go env GOPATH)/bin/errcheck" -exclude .errcheck-excludes ./internal/...
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint

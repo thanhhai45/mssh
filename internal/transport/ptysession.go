@@ -52,7 +52,7 @@ func startPTYProcess(
 	go func() {
 		waitErr := command.Wait()
 		userClosed := session.closedOnPurpose.Load()
-		session.Close()
+		_ = session.Close()
 
 		if userClosed {
 			onExit(nil)
@@ -117,7 +117,9 @@ func (session *ptySession) Close() error {
 		// would leave it running, holding a remote session open and a process
 		// on this machine.
 		if session.command.Process != nil {
-			session.command.Process.Kill()
+			// Kill fails when the process has already exited, which is the
+			// ordinary case for a session the remote end ended first.
+			_ = session.command.Process.Kill()
 		}
 		closeErr = session.terminal.Close()
 	})

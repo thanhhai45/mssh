@@ -17,7 +17,7 @@ import {
     type SessionState,
 } from '@/lib/api'
 import {accentTextClass} from '@/lib/colors'
-import {kindIcon} from '@/lib/kind-icons'
+import {KindIcon} from '@/components/kind-icon'
 import {useSessionStatus} from '@/lib/session-status-store'
 import {
     clearTerminal,
@@ -137,7 +137,6 @@ export function ServerTerminalPage() {
     }
 
     const statusMessage = statuses[connection.id]?.message
-    const KindIcon = kindIcon(connection.kind)
 
     return (
         <div className="flex flex-1 flex-col gap-4 duration-300 animate-in fade-in">
@@ -154,7 +153,7 @@ export function ServerTerminalPage() {
                             {connection.name}
                         </h1>
                         <Badge variant="secondary" className="shrink-0 gap-1">
-                            <KindIcon className="size-3"/>
+                            <KindIcon kind={connection.kind} className="size-3"/>
                             {kindMeta(connection.kind).label}
                         </Badge>
                     </div>

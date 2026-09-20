@@ -20,7 +20,7 @@ func writeV1Database(t *testing.T, path string) {
 	if err != nil {
 		t.Fatalf("open raw database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.Exec(string(body)); err != nil {
 		t.Fatalf("apply migration 001: %v", err)
@@ -71,13 +71,13 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Open: %v", err)
 	}
-	first.Close()
+	_ = first.Close()
 
 	second, err := Open(path)
 	if err != nil {
 		t.Fatalf("second Open: %v", err)
 	}
-	defer second.Close()
+	defer func() { _ = second.Close() }()
 
 	if _, err := second.GetConnection("c1"); err != nil {
 		t.Errorf("connection lost on the second open: %v", err)

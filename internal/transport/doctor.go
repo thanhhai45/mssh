@@ -36,7 +36,10 @@ func ensureUsablePath() {
 			}
 		}
 		if len(missing) > 0 {
-			os.Setenv("PATH", currentPath+":"+strings.Join(missing, ":"))
+			// The only documented failure is an invalid variable name, which
+			// "PATH" is not. If it somehow failed, LookPath below would report
+			// the real consequence anyway.
+			_ = os.Setenv("PATH", currentPath+":"+strings.Join(missing, ":"))
 		}
 	})
 }

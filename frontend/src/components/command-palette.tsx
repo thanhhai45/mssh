@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import {describeConnection, sessionDotClass, type Connection, type Workspace} from '@/lib/api'
 import {accentTextClass} from '@/lib/colors'
-import {kindIcon} from '@/lib/kind-icons'
+import {KindIcon} from '@/components/kind-icon'
 import {useSessionStatus} from '@/lib/session-status-store'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
@@ -34,17 +34,27 @@ export function CommandPalette() {
     const inputRef = useRef<HTMLInputElement>(null)
     const listRef = useRef<HTMLDivElement>(null)
 
+    // `open` really is a dependency: without it the handler would keep reading
+    // the value it saw on the first render and the toggle would only ever
+    // open. Re-registering one listener per toggle costs nothing.
     useEffect(() => {
         function handleKeyDown(event: KeyboardEvent) {
             if (event.metaKey && event.key === 'p') {
                 event.preventDefault()
-                setOpen((wasOpen) => !wasOpen)
+                if (open) {
+                    setOpen(false)
+                    return
+                }
+                // Reopening should not resume the last search.
+                setQuery('')
+                setHighlighted(0)
+                setOpen(true)
             }
         }
 
         document.addEventListener('keydown', handleKeyDown)
         return () => document.removeEventListener('keydown', handleKeyDown)
-    }, [])
+    }, [open])
 
     // Every searchable field is folded into one lowercase string per entry, so
     // matching is a substring test rather than a scan of five fields.
@@ -80,16 +90,16 @@ export function CommandPalette() {
             .slice(0, 50)
     }, [entries, query])
 
-    // A new query means a new list, and the old highlight index may point past
-    // the end of it.
-    useEffect(() => {
+    // This used to be an effect reacting to `query`. Setting state in an effect
+    // costs an extra render with the stale value still on screen, and React's
+    // lint rules now say so; doing it where the change happens is both faster
+    // and easier to follow.
+    function setSearch(nextQuery: string) {
+        setQuery(nextQuery)
+        // A new query means a new list, and the old index may point past its
+        // end.
         setHighlighted(0)
-    }, [query])
-
-    // Reopening should not resume the last search.
-    useEffect(() => {
-        if (open) setQuery('')
-    }, [open])
+    }
 
     useEffect(() => {
         listRef.current
@@ -139,7 +149,7 @@ export function CommandPalette() {
                         autoCorrect="off"
                         spellCheck={false}
                         className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                        onChange={(event) => setQuery(event.target.value)}
+                        onChange={(event) => setSearch(event.target.value)}
                         onKeyDown={(event) => {
                             if (event.key === 'ArrowDown') {
                                 event.preventDefault()
@@ -173,7 +183,6 @@ export function CommandPalette() {
                         </p>
                     ) : (
                         matches.map((entry, index) => {
-                            const Icon = kindIcon(entry.connection.kind)
                             const isHighlighted = index === highlighted
 
                             return (
@@ -190,7 +199,8 @@ export function CommandPalette() {
                                         isHighlighted && 'bg-accent',
                                     )}
                                 >
-                                    <Icon
+                                    <KindIcon
+                                        kind={entry.connection.kind}
                                         className={cn(
                                             'size-4 shrink-0',
                                             accentTextClass(entry.workspace.color),
