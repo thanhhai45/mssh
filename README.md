@@ -372,7 +372,7 @@ frontend/src/
 | `key ... is protected by a passphrase` | `ssh-add <key>`, then use the SSH agent method |
 | `the Session Manager plugin is not installed` | `brew install --cask session-manager-plugin` |
 | `your AWS session has expired` | Run the `aws sso login` command in the message |
-| `no AWS credentials this app can see` | Run `aws configure`. An app started from Finder never reads `~/.zshrc`, so credentials exported there are invisible to it — they have to live in `~/.aws/credentials` |
+| `no AWS credentials this app can see` | mssh runs your login shell at startup and takes its environment, so exports in `~/.zshrc` or `~/.zprofile` do reach it. Check `aws sts get-caller-identity` in a terminal: if it works there but not here, the export lives in a file your login shell does not read. `aws configure` puts the credentials in `~/.aws/credentials`, which any process can read |
 | `... is not reachable through Session Manager` | Check the instance is running, has the SSM Agent, and has an IAM role with `AmazonSSMManagedInstanceCore` |
 | `this AWS profile is not allowed to run ssm:StartSession` | Add that permission to the role or user |
 | `connection ... is already open` | The session is still running; disconnect it first |

@@ -12,10 +12,17 @@ func TestExplainSSHCommandFailure(t *testing.T) {
 		mustSay []string
 	}{
 		{
-			name: "a ProxyCommand with no AWS credentials explains the Finder problem",
+			// The advice used to be "Finder never reads ~/.zshrc". It does now,
+			// so the test asserts the current claim rather than a phrase that
+			// happens to survive both versions.
+			name: "a ProxyCommand with no AWS credentials points at the shell environment",
 			output: "Unable to locate credentials. You can configure credentials by " +
 				"running \"aws configure\".",
-			mustSay: []string{"~/.zshrc", "aws configure", "~/.aws/credentials"},
+			mustSay: []string{
+				"login shell",
+				"aws sts get-caller-identity",
+				"~/.aws/credentials",
+			},
 		},
 		{
 			name:    "a missing profile is the same problem",

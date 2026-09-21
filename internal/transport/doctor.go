@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// commonBinDirectories are added to PATH because an application launched from
-// Finder does not inherit the shell's PATH, and the AWS CLI almost always
-// lives in one of these.
+// commonBinDirectories are where the AWS CLI usually lives. They are only the
+// fallback for when the login shell could not be read at all — a guess, and a
+// poor one for anybody using asdf, mise, nvm or a custom prefix.
 var commonBinDirectories = []string{
 	"/opt/homebrew/bin",
 	"/usr/local/bin",
@@ -21,32 +21,87 @@ var commonBinDirectories = []string{
 	"/bin",
 }
 
-var extendPathOnce sync.Once
+var adoptEnvironmentOnce sync.Once
 
-// ensureUsablePath widens the process PATH once, so exec.LookPath finds the
-// AWS tools whether mssh was started from a terminal or double-clicked.
-func ensureUsablePath() {
-	extendPathOnce.Do(func() {
-		currentPath := os.Getenv("PATH")
+// ensureUsableEnvironment makes this process's environment resemble the one the
+// user's own terminal would have, once.
+//
+// Every caller wants the same thing in the end: that exec.LookPath finds `aws`
+// and `ssh`, and that whatever those programs read from the environment is
+// there when they look.
+func ensureUsableEnvironment() {
+	adoptEnvironmentOnce.Do(adoptLoginShellEnvironment)
+}
 
-		var missing []string
-		for _, directory := range commonBinDirectories {
-			if !strings.Contains(currentPath, directory) {
-				missing = append(missing, directory)
+// adoptLoginShellEnvironment copies the login shell's environment into this
+// process.
+//
+// Values already set here win. Someone who ran `AWS_PROFILE=other mssh` from a
+// terminal meant it, and a default from their shell profile must not overrule
+// them. The case this exists for — launched from Finder — has almost nothing
+// set, so almost everything gets filled in.
+//
+// PATH is the exception. launchd does hand this process a PATH, just a useless
+// one, so skipping it on the grounds that it is "already set" would defeat the
+// whole exercise. It is merged instead, the shell's entries first.
+func adoptLoginShellEnvironment() {
+	variables, err := loginShellEnvironment()
+	if err != nil {
+		// Fall back to the old guess rather than to nothing at all.
+		extendPathWithCommonDirectories()
+		return
+	}
+
+	for name, value := range variables {
+		if name == "PATH" {
+			continue
+		}
+		if _, alreadySet := os.LookupEnv(name); alreadySet {
+			continue
+		}
+		_ = os.Setenv(name, value)
+	}
+
+	if shellPath := variables["PATH"]; shellPath != "" {
+		_ = os.Setenv("PATH", mergePath(shellPath, os.Getenv("PATH")))
+	}
+}
+
+// mergePath joins two PATH values, keeping the order of the first and adding
+// only the directories the second contributes.
+//
+// Comparing whole entries rather than running strings.Contains over the joined
+// value, which the previous version did: "/usr/bin" is a substring of
+// "/opt/usr/bin" and of "/usr/bin-old", and that test quietly answered yes.
+func mergePath(primary string, extra string) string {
+	seen := map[string]bool{}
+	merged := make([]string, 0, 16)
+
+	for _, group := range []string{primary, extra} {
+		for _, directory := range strings.Split(group, ":") {
+			if directory == "" || seen[directory] {
+				continue
 			}
+			seen[directory] = true
+			merged = append(merged, directory)
 		}
-		if len(missing) > 0 {
-			// The only documented failure is an invalid variable name, which
-			// "PATH" is not. If it somehow failed, LookPath below would report
-			// the real consequence anyway.
-			_ = os.Setenv("PATH", currentPath+":"+strings.Join(missing, ":"))
-		}
-	})
+	}
+	return strings.Join(merged, ":")
+}
+
+// extendPathWithCommonDirectories is the fallback for a login shell that could
+// not be run: better than nothing, and wrong for anybody with a custom prefix.
+func extendPathWithCommonDirectories() {
+	// The only documented failure of Setenv is an invalid variable name, which
+	// "PATH" is not. If it somehow failed, LookPath would report the real
+	// consequence anyway.
+	_ = os.Setenv("PATH",
+		mergePath(os.Getenv("PATH"), strings.Join(commonBinDirectories, ":")))
 }
 
 // requireAWSTools checks the two binaries an SSM session cannot run without.
 func requireAWSTools() error {
-	ensureUsablePath()
+	ensureUsableEnvironment()
 
 	if _, err := exec.LookPath("aws"); err != nil {
 		return fmt.Errorf(
@@ -124,12 +179,14 @@ func explainAWSFailure(profile string, output string) string {
 		strings.Contains(lowered, "you must specify a region"):
 		return fmt.Sprintf(
 			"no AWS credentials this app can see.\n\n"+
-				"If you keep them in ~/.zshrc: an application started from Finder "+
-				"never reads that file, so those exports are invisible here. Run "+
-				"`aws configure` to keep them in ~/.aws/credentials instead, which "+
-				"every process can read.\n\n"+
-				"If you use SSO, run `%s`. Otherwise set a profile and region on "+
-				"the workspace.", loginCommand)
+				"mssh runs your login shell at startup and takes its environment, "+
+				"so anything exported in ~/.zshrc or ~/.zprofile should already be "+
+				"here. Check `echo $AWS_PROFILE` and `aws sts get-caller-identity` "+
+				"in a terminal: if they work there but not here, the export is "+
+				"probably in a file your login shell does not read.\n\n"+
+				"If you use SSO, run `%s`. Otherwise run `aws configure` to keep "+
+				"the credentials in ~/.aws/credentials, or set a profile and "+
+				"region on the workspace.", loginCommand)
 
 	case strings.Contains(lowered, "could not be found") && strings.Contains(lowered, "profile"):
 		return fmt.Sprintf("AWS profile %q is not configured in ~/.aws/config", profile)

@@ -37,6 +37,57 @@ func TestAWSFlags(t *testing.T) {
 	}
 }
 
+func TestMergePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		primary string
+		extra   string
+		want    string
+	}{
+		{
+			name:    "the first argument keeps its order",
+			primary: "/opt/homebrew/bin:/usr/bin",
+			extra:   "/bin",
+			want:    "/opt/homebrew/bin:/usr/bin:/bin",
+		},
+		{
+			name:    "a directory in both appears once",
+			primary: "/usr/bin:/bin",
+			extra:   "/bin:/sbin",
+			want:    "/usr/bin:/bin:/sbin",
+		},
+		{
+			// The old code asked strings.Contains(path, "/usr/bin"), which is
+			// true of "/opt/usr/bin" — so a real /usr/bin was never added.
+			// Whole entries are compared now.
+			name:    "a directory is not confused with one it is a substring of",
+			primary: "/opt/usr/bin:/usr/bin-old",
+			extra:   "/usr/bin",
+			want:    "/opt/usr/bin:/usr/bin-old:/usr/bin",
+		},
+		{
+			name:    "empty entries are dropped",
+			primary: "/usr/bin::",
+			extra:   ":/bin",
+			want:    "/usr/bin:/bin",
+		},
+		{
+			name:    "an empty side changes nothing",
+			primary: "/usr/bin",
+			extra:   "",
+			want:    "/usr/bin",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := mergePath(testCase.primary, testCase.extra); got != testCase.want {
+				t.Errorf("mergePath = %q, want %q", got, testCase.want)
+			}
+		})
+	}
+}
+
 func TestExplainAWSFailure(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -51,10 +102,13 @@ func TestExplainAWSFailure(t *testing.T) {
 			mustSay: "aws sso login --profile prod",
 		},
 		{
-			name:    "missing credentials mentions the workspace",
+			// Not "workspace": that word survived the rewrite of this message
+			// and so proved nothing. The claim worth pinning is the one that
+			// would be a lie if adoptLoginShellEnvironment were ever removed.
+			name:    "missing credentials say the shell environment was already read",
 			profile: "",
 			output:  "Unable to locate credentials. You can configure credentials by running...",
-			mustSay: "workspace",
+			mustSay: "login shell",
 		},
 		{
 			name:    "unknown profile names it",

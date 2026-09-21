@@ -24,7 +24,7 @@ func (sshConfigDialer) Preflight(config Config) error {
 		return fmt.Errorf("this connection has no ssh host alias")
 	}
 
-	ensureUsablePath()
+	ensureUsableEnvironment()
 	if _, err := exec.LookPath("ssh"); err != nil {
 		return fmt.Errorf("the ssh command is not installed, or not on PATH")
 	}
@@ -66,10 +66,12 @@ func explainSSHCommandFailure(alias string, output string) string {
 		strings.Contains(lowered, "the config profile") && strings.Contains(lowered, "could not be found"):
 		return fmt.Sprintf(
 			"the ProxyCommand for %q could not find AWS credentials.\n\n"+
-				"An application started from Finder does not read ~/.zshrc, so "+
-				"anything exported there is invisible to it. Run `aws configure` "+
-				"to keep the credentials in ~/.aws/credentials instead — every "+
-				"process can read that, however it was started.", alias)
+				"mssh runs your login shell at startup and hands its environment "+
+				"to ssh, so exports in ~/.zshrc should reach the ProxyCommand. "+
+				"Check that `aws sts get-caller-identity` works in a terminal: if "+
+				"it does, run `aws configure` so the credentials live in "+
+				"~/.aws/credentials, which any process can read however it was "+
+				"started.", alias)
 
 	case strings.Contains(lowered, "could not resolve hostname"):
 		return fmt.Sprintf(
