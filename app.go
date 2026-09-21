@@ -29,6 +29,10 @@ func NewApp(dataStore *store.Store, vault secrets.Vault, sessions *session.Manag
 // so we can call the runtime methods
 func (app *App) startup(startupContext context.Context) {
 	app.appContext = startupContext
+
+	// Running the user's login shell costs most of a second. Do it now, in the
+	// background, rather than when somebody is waiting for a connection.
+	transport.WarmShellEnvironment()
 }
 func (app *App) shutdown(shutdownContext context.Context) {
 	app.sessions.CloseAll()
