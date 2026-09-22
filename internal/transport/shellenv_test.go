@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -208,6 +209,101 @@ func TestReadLoginShellEnvironment(t *testing.T) {
 				"grandchild, so WaitDelay is not doing its job", elapsed)
 		}
 	})
+}
+
+func TestShellEnvironmentSnapshot(t *testing.T) {
+	fakeShell(t, envDump("",
+		"PATH=/x/y",
+		"AWS_PROFILE=prod",
+		"AWS_SECRET_ACCESS_KEY=hunter2",
+		"AWS_SESSION_TOKEN=abc123",
+		"aws_access_key_id=AKIA",
+		"MY_PASSWORD=letmein",
+		"HTTPS_PROXY=http://proxy:8080",
+		"SSH_AUTH_SOCK=/tmp/agent",
+		"EDITOR=vim",
+	))
+
+	report := ShellEnvironmentSnapshot(true)
+
+	if report.Shell == "" {
+		t.Error("the report does not name the shell it ran")
+	}
+	if report.Error != "" {
+		t.Fatalf("unexpected error: %s", report.Error)
+	}
+
+	rows := map[string]ShellEnvironmentVariable{}
+	for _, row := range report.Variables {
+		rows[row.Name] = row
+	}
+
+	// The half that cannot be got wrong: a value that should never leave this
+	// process must not be in the report at all, not merely hidden by the UI.
+	for _, name := range []string{
+		"AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+		"aws_access_key_id", "MY_PASSWORD",
+	} {
+		row, present := rows[name]
+		if !present {
+			t.Fatalf("%s is missing from the report", name)
+		}
+		if !row.Masked {
+			t.Errorf("%s was not masked", name)
+		}
+		if row.Value != "" {
+			t.Errorf("%s still carries its value %q", name, row.Value)
+		}
+	}
+
+	// And the half that makes it useful: everything else is readable.
+	for name, want := range map[string]string{
+		"PATH":        "/x/y",
+		"AWS_PROFILE": "prod",
+		"HTTPS_PROXY": "http://proxy:8080",
+		"EDITOR":      "vim",
+	} {
+		if rows[name].Masked || rows[name].Value != want {
+			t.Errorf("%s = %q (masked=%v), want %q",
+				name, rows[name].Value, rows[name].Masked, want)
+		}
+	}
+
+	if rows["EDITOR"].Interesting {
+		t.Error("EDITOR should not be flagged as interesting")
+	}
+	for _, name := range []string{"PATH", "AWS_PROFILE", "SSH_AUTH_SOCK", "HTTPS_PROXY"} {
+		if !rows[name].Interesting {
+			t.Errorf("%s should be flagged as interesting", name)
+		}
+	}
+
+	// A map iterates differently every time; the report must not.
+	if !sort.SliceIsSorted(report.Variables, func(first int, second int) bool {
+		left, right := report.Variables[first], report.Variables[second]
+		if left.Interesting != right.Interesting {
+			return left.Interesting
+		}
+		return left.Name < right.Name
+	}) {
+		t.Error("the report came back in an unstable order")
+	}
+}
+
+func TestShellEnvironmentSnapshotReportsFailure(t *testing.T) {
+	t.Setenv("SHELL", "/nope/not/a/shell")
+
+	report := ShellEnvironmentSnapshot(true)
+
+	if report.Error == "" {
+		t.Fatal("a failed reading must say so rather than look empty")
+	}
+	if report.Shell != "/nope/not/a/shell" {
+		t.Errorf("shell = %q, want the one that failed", report.Shell)
+	}
+	if report.Variables == nil {
+		t.Error("Variables is nil, which crosses to JavaScript as null")
+	}
 }
 
 /* ---------------- smoke tests against the real shell ---------------- */

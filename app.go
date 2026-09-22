@@ -266,6 +266,23 @@ func (app *App) CheckSSMTools() error {
 	return transport.CheckSSMTools()
 }
 
+// GetShellEnvironment reports what mssh took from the user's login shell.
+//
+// Inheriting an environment silently would make behaviour depend on state
+// nobody can see; this is what makes it inspectable instead. Values of
+// anything that looks like a secret are dropped on the Go side, so they never
+// reach the frontend at all.
+func (app *App) GetShellEnvironment() transport.ShellEnvironmentReport {
+	return transport.ShellEnvironmentSnapshot(false)
+}
+
+// ReloadShellEnvironment runs the login shell again. For the button beside the
+// report, after somebody edits their ~/.zshrc and wants to see the difference
+// without restarting the app.
+func (app *App) ReloadShellEnvironment() transport.ShellEnvironmentReport {
+	return transport.ShellEnvironmentSnapshot(true)
+}
+
 /*------------------ Settings ----------------------------------*/
 // GetSetting
 func (app *App) GetAllSettings() (map[string]string, error) {
