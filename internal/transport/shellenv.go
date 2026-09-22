@@ -19,7 +19,10 @@ const envMarker = "__MSSH_ENV_BEGINS__"
 
 // shellEnvironmentLimit bounds the whole thing. A startup file that loads nvm
 // or conda takes seconds; one that ends in `exec tmux` never returns at all.
-const shellEnvironmentLimit = 5 * time.Second
+//
+// A var rather than a const so the test for it can run in a fraction of a
+// second instead of five of them. Same reason Store takes its clock as a field.
+var shellEnvironmentLimit = 5 * time.Second
 
 // notInherited are variables that belong to the shell which produced them
 // rather than to this process. TERM is set deliberately in
