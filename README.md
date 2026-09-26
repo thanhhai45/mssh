@@ -1,5 +1,11 @@
 # mssh
 
+<img width="1042" height="820" alt="5" src="https://github.com/user-attachments/assets/c4ba5205-137b-4e20-ba1b-585318b4646d" />
+<img width="1043" height="806" alt="4" src="https://github.com/user-attachments/assets/79e60a83-3f6b-4dd4-a09e-c9e779861bc4" />
+<img width="1031" height="811" alt="3" src="https://github.com/user-attachments/assets/fbf7d3ba-8442-4e34-9af4-4bd88b55ce17" />
+<img width="1038" height="811" alt="1" src="https://github.com/user-attachments/assets/59c4c3f0-b25c-428f-ae1a-cc1a7b9b2de4" />
+
+
 **A desktop app for the servers you keep having to reach.**
 
 If you look after more than a handful of machines, the day looks like this: an
