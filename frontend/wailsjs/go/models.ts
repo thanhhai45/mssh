@@ -1,3 +1,22 @@
+export namespace session {
+	
+	export class Info {
+	    sessionId: string;
+	    connectionId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Info(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sessionId = source["sessionId"];
+	        this.connectionId = source["connectionId"];
+	    }
+	}
+
+}
+
 export namespace store {
 	
 	export class Connection {

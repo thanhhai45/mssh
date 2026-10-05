@@ -70,8 +70,8 @@ export function MoveConnection(arg1, arg2) {
   return window['go']['main']['App']['MoveConnection'](arg1, arg2);
 }
 
-export function OpenSessionIDs() {
-  return window['go']['main']['App']['OpenSessionIDs']();
+export function OpenSessions() {
+  return window['go']['main']['App']['OpenSessions']();
 }
 
 export function ParseSSHCommand(arg1) {

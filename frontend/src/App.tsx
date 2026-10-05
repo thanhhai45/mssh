@@ -6,6 +6,7 @@ import {TooltipProvider} from '@/components/ui/tooltip'
 import { SessionStatusProvider } from '@/lib/session-status-store'
 import { SettingsProvider } from '@/lib/settings-store'
 import {WorkspacesProvider} from '@/lib/workspaces-store'
+import {TabsProvider} from '@/lib/tabs-store'
 import {router} from '@/router'
 
 function App() {
@@ -16,7 +17,9 @@ function App() {
                     <TerminalSettingsSync/>
                     <WorkspacesProvider>
                         <SessionStatusProvider>
-                            <RouterProvider router={router}/>
+                            <TabsProvider>
+                              <RouterProvider router={router}/>
+                            </TabsProvider>
                         </SessionStatusProvider>
                     </WorkspacesProvider>
                 </SettingsProvider>

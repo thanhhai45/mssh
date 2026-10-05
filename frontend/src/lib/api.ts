@@ -1,6 +1,7 @@
 import * as App from '../../wailsjs/go/main/App';
 import {EventsOn} from '../../wailsjs/runtime/runtime';
-import type {store, transport} from '../../wailsjs/go/models';
+import type {session, store, transport} from '../../wailsjs/go/models';
+import {asSessionId, type SessionId} from './ids';
 
 /* ---------------- Types ---------------- */
 
@@ -10,6 +11,7 @@ export type Connection = store.Connection;
 export type ConnectionInput = store.ConnectionInput;
 export type ParsedSSHCommand = store.ParsedSSHCommand;
 export type ResolvedAWS = store.ResolvedAWS;
+export type SessionInfo = Omit<session.Info, 'sessionId'> & {sessionId: SessionId};
 export type ShellEnvironmentReport = transport.ShellEnvironmentReport;
 export type ShellEnvironmentVariable = transport.ShellEnvironmentVariable;
 
@@ -20,6 +22,7 @@ export type AuthMethod = 'agent' | 'key' | 'password';
 export type SessionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
 export type SessionStatus = {
+  sessionId: SessionId;
   connectionId: string;
   state: SessionState;
   message: string;
@@ -170,11 +173,12 @@ export const api = {
   deleteConnectionPassword: (id: string): Promise<void> => App.DeleteConnectionPassword(id),
   hasConnectionPassword: (id: string): Promise<boolean> => App.HasConnectionPassword(id),
 
-  connectSession: (id: string, password: string, cols: number, rows: number): Promise<void> => App.ConnectSession(id, password, cols, rows),
-  writeToSession: (id: string, data: string): Promise<void> => App.WriteToSession(id, data),
-  resizeSession: (id: string, cols: number, rows: number): Promise<void> => App.ResizeSession(id, cols, rows),
-  disconnectSession: (id: string): Promise<void> => App.DisconnectSession(id),
-  openSessionIds: (): Promise<string[]> => App.OpenSessionIDs(),
+  /** Open a new session and retuns its id. */
+  connectSession: (connectionId: string, password: string, cols: number, rows: number): Promise<SessionId> => App.ConnectSession(connectionId, password, cols, rows).then(asSessionId),
+  writeToSession: (sessionId: SessionId, data: string): Promise<void> => App.WriteToSession(sessionId, data),
+  resizeSession: (sessionId: SessionId, cols: number, rows: number): Promise<void> => App.ResizeSession(sessionId, cols, rows),
+  disconnectSession: (sessionId: SessionId): Promise<void> => App.DisconnectSession(sessionId),
+  openSessions: (): Promise<SessionInfo[]> => App.OpenSessions() as Promise<SessionInfo[]>,
   checkSSMTools: (): Promise<void> => App.CheckSSMTools(),
 
   getShellEnvironment: (): Promise<ShellEnvironmentReport> => App.GetShellEnvironment(),
@@ -186,9 +190,13 @@ export const api = {
 };
 
 /* ---------------- Events ---------------- */
-/** Subscribes to one session's output. Returns the unsubscribe function. */
-export function onSessionOutput(connectionId: string, handler: (chunk: string) => void,): () => void {
-  return EventsOn('session:output:'+ connectionId, handler);
+/** Subscribes to one session's output. Returns the unsubscribe function.
+ * 
+ * Keyed by session, not by connection: a tab that reconnects gets a new id,
+ * and output from the old session must not land in it.
+*/
+export function onSessionOutput(sessionId: SessionId, handler: (chunk: string) => void,): () => void {
+  return EventsOn('session:output:'+ sessionId, handler);
 }
 
 /** Subscribes to status changes for every session. Returns the unsubscribe function. */

@@ -8,6 +8,7 @@ import (
 	"mssh/internal/store"
 	"mssh/internal/transport"
 
+	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -66,6 +67,8 @@ func (app *App) DeleteWorkspace(id string) error {
 	}
 
 	for _, c := range conns {
+		// Every tab of every machine in here is about to point at nothing.
+		app.sessions.CloseConnection(c.ID)
 		app.forgetPassword(c.ID)
 	}
 	return nil
@@ -102,6 +105,9 @@ func (app *App) DeleteConnection(id string) error {
 	if err := app.store.DeleteConnection(id); err != nil {
 		return err
 	}
+	// Closes a gap that predates multi-tab: the session used to keep running
+	// with nothing in the UI able to reach it.
+	app.sessions.CloseConnection(id)
 	app.forgetPassword(id)
 	return nil
 }
@@ -166,15 +172,15 @@ func (app *App) ConnectSession(
 	password string,
 	cols uint16,
 	rows uint16,
-) error {
+) (string, error) {
 	connection, err := app.store.GetConnection(connectionID)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	workspace, err := app.store.GetWorkspace(connection.WorkspaceID)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if password == "" && connection.NeedsPassword() {
@@ -198,62 +204,81 @@ func (app *App) ConnectSession(
 		Extra:      connection.Extra,
 	}
 
-	app.emitSessionStatus(connectionID, "connecting", "")
+	// The id is made here rather than inside the manager because it is needed
+	// before Open returns: it names the channel the output events arrive on,
+	// and those start during the dial
+	sessionID := uuid.NewString()
+
+	app.emitSessionStatus(sessionID, connectionID, "connecting", "")
 
 	err = app.sessions.Open(
 		app.appContext,
+		sessionID,
 		connectionID,
 		config,
 		transport.Size{Cols: cols, Rows: rows},
 		func(chunk []byte) {
-			runtime.EventsEmit(app.appContext, "session:output:"+connectionID, string(chunk))
+			runtime.EventsEmit(app.appContext, "session:output:"+sessionID, string(chunk))
 		},
 		func(exitErr error) {
 			// A session that ends with something to say ended badly. The SSM
 			// kinds report failures this way: `aws` starts successfully and
 			// only then discovers it cannot continue.
 			if exitErr != nil {
-				app.emitSessionStatus(connectionID, "error", exitErr.Error())
+				app.emitSessionStatus(sessionID, connectionID, "error", exitErr.Error())
 				return
 			}
-			app.emitSessionStatus(connectionID, "disconnected", "")
+			app.emitSessionStatus(sessionID, connectionID, "disconnected", "")
 		},
 	)
 	if err != nil {
-		app.emitSessionStatus(connectionID, "error", err.Error())
-		return err
+		app.emitSessionStatus(sessionID, connectionID, "error", err.Error())
+		return "", err
 	}
 
 	// Best effort, and after the session is up: a bookkeeping failure must not
 	// turn a working connection into a reported error.
 	_ = app.store.MarkConnectionUsed(connectionID)
 
-	app.emitSessionStatus(connectionID, "connected", "")
-	return nil
+	app.emitSessionStatus(sessionID, connectionID, "connected", "")
+	return sessionID, nil
 }
 
-func (app *App) WriteToSession(connectionID string, data string) error {
-	return app.sessions.Write(connectionID, []byte(data))
+func (app *App) WriteToSession(sessionID string, data string) error {
+	return app.sessions.Write(sessionID, []byte(data))
 }
 
-func (app *App) ResizeSession(connectionID string, cols uint16, rows uint16) error {
-	return app.sessions.Resize(connectionID, transport.Size{Cols: cols, Rows: rows})
+func (app *App) ResizeSession(sessionID string, cols uint16, rows uint16) error {
+	return app.sessions.Resize(sessionID, transport.Size{Cols: cols, Rows: rows})
 }
 
-func (app *App) DisconnectSession(connectionID string) error {
-	if err := app.sessions.Close(connectionID); err != nil {
+func (app *App) DisconnectSession(sessionID string) error {
+	// Ask before closing. Close forgets the session, and then there is
+	// nothing left to ask
+	connectionID := app.sessions.ConnectionOf(sessionID)
+	if err := app.sessions.Close(sessionID); err != nil {
 		return err
 	}
-	app.emitSessionStatus(connectionID, "disconnected", "")
+	app.emitSessionStatus(sessionID, connectionID, "disconnected", "")
 	return nil
 }
 
-func (app *App) OpenSessionIDs() []string {
-	return app.sessions.OpenIDs()
+// OpenSessionIDs lets the frontend rebuild its tabs after a reload.
+func (app *App) OpenSessions() []session.Info {
+	return app.sessions.OpenSessions()
 }
 
-func (app *App) emitSessionStatus(connectionID string, state string, message string) {
+// emitSessionStatus carries  both ids on purpose. The terminal tab cares
+// which session changed; the sidebar, the home page and the breadscrumbs all
+// still draw a dot per machine, and they cannot work that out from a session id alone.
+func (app *App) emitSessionStatus(
+	sessionID string,
+	connectionID string,
+	state string,
+	message string,
+) {
 	runtime.EventsEmit(app.appContext, "session:status", map[string]string{
+		"sessionId":    sessionID,
 		"connectionId": connectionID,
 		"state":        state,
 		"message":      message,

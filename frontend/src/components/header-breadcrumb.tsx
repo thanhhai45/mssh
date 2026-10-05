@@ -3,7 +3,7 @@ import {ChevronRight} from 'lucide-react'
 
 import {sessionDotClass} from '@/lib/api'
 import {accentTextClass} from '@/lib/colors'
-import {useSessionStatus} from '@/lib/session-status-store'
+import {useTabs} from '@/lib/tabs-store'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
 
@@ -24,7 +24,7 @@ const STATE_LABEL: Record<string, string> = {
 export function HeaderBreadcrumb() {
     const pathname = useRouterState({select: (state) => state.location.pathname})
     const {workspaces, connections} = useWorkspaces()
-    const {stateOf} = useSessionStatus()
+    const {summaryOf} = useTabs()
 
     const match = pathname.match(/^\/workspaces\/([^/]+)\/servers\/([^/]+)$/)
 
@@ -43,7 +43,9 @@ export function HeaderBreadcrumb() {
 
     // The lists load after the first paint, so both can legitimately be missing
     // for a frame. Showing the trail without names beats showing nothing.
-    const state = stateOf(connectionId)
+    // A machine has no single state once it can have several tabs; summaryOf
+    // folds them into the one worth showing.
+    const state = summaryOf(connectionId).state
 
     return (
         <nav className="flex min-w-0 items-center gap-1.5 text-sm">

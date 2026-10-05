@@ -11,7 +11,7 @@ import {
 import {describeConnection, sessionDotClass, type Connection, type Workspace} from '@/lib/api'
 import {accentTextClass} from '@/lib/colors'
 import {KindIcon} from '@/components/kind-icon'
-import {useSessionStatus} from '@/lib/session-status-store'
+import {useTabs} from '@/lib/tabs-store'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
 
@@ -30,7 +30,7 @@ export function CommandPalette() {
 
     const navigate = useNavigate()
     const {workspaces, connections} = useWorkspaces()
-    const {stateOf} = useSessionStatus()
+    const {summaryOf} = useTabs()
     const inputRef = useRef<HTMLInputElement>(null)
     const listRef = useRef<HTMLDivElement>(null)
 
@@ -218,7 +218,7 @@ export function CommandPalette() {
                                     <span
                                         className={cn(
                                             'size-2 shrink-0 rounded-full',
-                                            sessionDotClass(stateOf(entry.connection.id)),
+                                            sessionDotClass(summaryOf(entry.connection.id).state),
                                         )}
                                     />
                                 </button>

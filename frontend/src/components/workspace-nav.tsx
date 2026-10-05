@@ -43,7 +43,7 @@ import {
 } from '@/lib/api'
 import {accentEdgeClass, swatchClass} from '@/lib/colors'
 import {KindIcon} from '@/components/kind-icon'
-import { useSessionStatus } from '@/lib/session-status-store'
+import {useTabs} from '@/lib/tabs-store'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
 
@@ -52,11 +52,40 @@ type PendingDelete =
     | {type: 'workspace'; workspace: Workspace}
     | {type: 'connection'; connection: Connection}
 
+/**
+ * The dot beside a connection, and how many terminals it has open.
+ *
+ * One machine can have several tabs now, so the dot takes the colour of the
+ * most notable state among them — see STATE_PRIORITY in the tabs store.
+ */
+function ConnectionDot({connectionId}: {connectionId: string}) {
+    const {summaryOf} = useTabs()
+    const summary = summaryOf(connectionId)
+
+    return (
+        <>
+            <span
+                className={cn(
+                    'size-1.5 shrink-0 rounded-full transition-colors duration-200',
+                    sessionDotClass(summary.state),
+                )}
+            />
+            {/* Only from two tabs up. Visiting a machine opens one empty tab,
+                so a "1" on every row you have ever clicked says nothing. */}
+            {summary.count > 1 && (
+                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                    {summary.count}
+                </span>
+            )}
+        </>
+    )
+}
+
 export function WorkspaceNav() {
     const pathname = useRouterState({select: (s) => s.location.pathname})
     const navigate = useNavigate()
     const {workspaces, connections, createConnection, deleteWorkspace, deleteConnection} = useWorkspaces()
-    const {stateOf} = useSessionStatus()
+    const {summaryOf} = useTabs()
 
     // Both dialogs are mounted only while open, so they never hold stale state.
     const [workspaceDialog, setWorkspaceDialog] = useState<Workspace | null | undefined>(undefined)
@@ -124,7 +153,7 @@ export function WorkspaceNav() {
                     const isActiveGroup = pathname.startsWith(groupPath)
                     const list = connections[workspace.id] ?? []
                     const connectedCount = list.filter(
-                        (connect) => stateOf(connect.id) === 'connected'
+                        (connect) => summaryOf(connect.id).state === 'connected'
                     ).length
 
                     return (
@@ -211,7 +240,7 @@ export function WorkspaceNav() {
                                                         className="h-auto py-1.5 pr-8"
                                                     >
                                                         <Link to={to}>
-                                                            <span className={cn('size-1.5 shrink-0 rounded-full transition-colors duration-200', sessionDotClass(stateOf(connection.id)))}/>
+                                                            <ConnectionDot connectionId={connection.id}/>
                                                             <KindIcon kind={connection.kind} className="size-3.5 shrink-0 text-muted-foreground"/>
                                                             <div className="flex min-w-0 flex-col leading-tight">
                                                                 <span className="truncate">

@@ -8,6 +8,7 @@ import {
     findInTerminal,
     onTerminalSearchResults,
 } from '@/lib/terminal-session'
+import type {TabId} from '@/lib/ids'
 
 /**
  * The find bar one terminal
@@ -17,10 +18,10 @@ import {
  * only asks questions and displays the answers
  * */
 export function TerminalFindBar({
-    connectionId,
+    tabId,
     onClose,
 }: {
-    connectionId: string,
+    tabId: TabId,
     onClose: () => void
 }) {
     const [term, setTerm] = useState('')
@@ -33,20 +34,20 @@ export function TerminalFindBar({
     }, [])
 
     useEffect(() => {
-        return onTerminalSearchResults(connectionId, (results) => {
+        return onTerminalSearchResults(tabId, (results) => {
             setResultIndex(results.resultIndex)
             setResultCount(results.resultCount)
         })
-    }, [connectionId])
+    }, [tabId])
 
     // Closing the bar must not leave highlights behind on the terminal
     useEffect(() => {
-        return () => clearTerminalSearch(connectionId)
-    }, [connectionId])
+        return () => clearTerminalSearch(tabId)
+    }, [tabId])
 
     
     function jumpTo(direction: 'next' | 'previous') {
-        findInTerminal(connectionId, {term, direction, incremental: false})
+        findInTerminal(tabId, {term, direction, incremental: false})
     }
 
     // resultIndex is -1 when there are more matches than the addon will
@@ -74,7 +75,7 @@ export function TerminalFindBar({
                     // readable until the next render.
                     const nextTerm = event.target.value
                     setTerm(nextTerm)
-                    findInTerminal(connectionId, {
+                    findInTerminal(tabId, {
                         term: nextTerm,
                         direction: 'next',
                         incremental: true,

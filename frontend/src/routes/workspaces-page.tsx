@@ -15,7 +15,7 @@ import {
 import {accentTextClass, accentTintClass, swatchClass} from '@/lib/colors'
 import {KindIcon} from '@/components/kind-icon'
 import {relativeTime} from '@/lib/relative-time'
-import {useSessionStatus} from '@/lib/session-status-store'
+import {useTabs} from '@/lib/tabs-store'
 import {cn} from '@/lib/utils'
 import {useWorkspaces} from '@/lib/workspaces-store'
 import {useState} from 'react'
@@ -25,7 +25,7 @@ const RECENT_LIMIT = 6
 
 export function WorkspacesPage() {
     const {workspaces, connections, loading, error} = useWorkspaces()
-    const {stateOf} = useSessionStatus()
+    const {summaryOf} = useTabs()
     const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false)
 
     // Flatten every workspace's list once, so "recent" can cross workspaces —
@@ -85,7 +85,7 @@ export function WorkspacesPage() {
                                         connection={connection}
                                         workspaceColor={workspace.color}
                                         workspaceName={workspace.name}
-                                        state={stateOf(connection.id)}
+                                        state={summaryOf(connection.id).state}
                                     />
                                 ))}
                             </div>
