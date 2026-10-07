@@ -46,10 +46,6 @@ export function GetConnection(arg1) {
   return window['go']['main']['App']['GetConnection'](arg1);
 }
 
-export function GetShellEnvironment() {
-  return window['go']['main']['App']['GetShellEnvironment']();
-}
-
 export function GetWorkspace(arg1) {
   return window['go']['main']['App']['GetWorkspace'](arg1);
 }
@@ -76,10 +72,6 @@ export function OpenSessions() {
 
 export function ParseSSHCommand(arg1) {
   return window['go']['main']['App']['ParseSSHCommand'](arg1);
-}
-
-export function ReloadShellEnvironment() {
-  return window['go']['main']['App']['ReloadShellEnvironment']();
 }
 
 export function ReorderWorkspaces(arg1) {

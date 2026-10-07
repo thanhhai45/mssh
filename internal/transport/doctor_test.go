@@ -102,13 +102,13 @@ func TestExplainAWSFailure(t *testing.T) {
 			mustSay: "aws sso login --profile prod",
 		},
 		{
-			// Not "workspace": that word survived the rewrite of this message
-			// and so proved nothing. The claim worth pinning is the one that
-			// would be a lie if adoptLoginShellEnvironment were ever removed.
-			name:    "missing credentials say the shell environment was already read",
+			// The claim worth pinning is the one that would become a lie if the
+			// feature behind it were removed: that the workspace can import
+			// keys from the shell.
+			name:    "missing credentials point at importing from the shell",
 			profile: "",
 			output:  "Unable to locate credentials. You can configure credentials by running...",
-			mustSay: "login shell",
+			mustSay: "Import from shell",
 		},
 		{
 			name:    "unknown profile names it",

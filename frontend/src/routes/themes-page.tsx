@@ -3,7 +3,6 @@ import {Monitor, Moon, Sun} from 'lucide-react'
 import {FitAddon} from '@xterm/addon-fit'
 import {Terminal} from '@xterm/xterm'
 
-import {ShellEnvironment} from '@/components/shell-environment'
 import {useTheme} from '@/components/theme-provider'
 import {Button} from '@/components/ui/button'
 import {Input} from '@/components/ui/input'
@@ -263,9 +262,6 @@ export function ThemesPage() {
                     <TerminalPreview/>
                 </div>
             </section>
-
-            {/* ---- Environment ---- */}
-            <ShellEnvironment/>
         </div>
     )
 }

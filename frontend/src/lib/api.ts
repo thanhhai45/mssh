@@ -1,6 +1,6 @@
 import * as App from '../../wailsjs/go/main/App';
 import {EventsOn} from '../../wailsjs/runtime/runtime';
-import type {session, store, transport} from '../../wailsjs/go/models';
+import type {session, store} from '../../wailsjs/go/models';
 import {asSessionId, type SessionId} from './ids';
 
 /* ---------------- Types ---------------- */
@@ -12,8 +12,6 @@ export type ConnectionInput = store.ConnectionInput;
 export type ParsedSSHCommand = store.ParsedSSHCommand;
 export type ResolvedAWS = store.ResolvedAWS;
 export type SessionInfo = Omit<session.Info, 'sessionId'> & {sessionId: SessionId};
-export type ShellEnvironmentReport = transport.ShellEnvironmentReport;
-export type ShellEnvironmentVariable = transport.ShellEnvironmentVariable;
 
 /** Go sends these as plain strings. These are the sets it actually accepts. */
 export type ConnectionKind = 'ssh' | 'ssm' | 'ssm-ssh' | 'ssh-config';
@@ -180,9 +178,6 @@ export const api = {
   disconnectSession: (sessionId: SessionId): Promise<void> => App.DisconnectSession(sessionId),
   openSessions: (): Promise<SessionInfo[]> => App.OpenSessions() as Promise<SessionInfo[]>,
   checkSSMTools: (): Promise<void> => App.CheckSSMTools(),
-
-  getShellEnvironment: (): Promise<ShellEnvironmentReport> => App.GetShellEnvironment(),
-  reloadShellEnvironment: (): Promise<ShellEnvironmentReport> => App.ReloadShellEnvironment(),
 
   getAllSettings: ():Promise<Record<string, string>> => App.GetAllSettings(),
   setSetting: (key: string, value: string): Promise<void> => App.SetSetting(key, value),

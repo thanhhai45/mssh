@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -41,51 +39,7 @@ var notInherited = map[string]bool{
 	"LOGNAME": true,
 }
 
-// shellEnvironmentResult is everything worth remembering about one attempt,
-// not just the variables: the diagnostics view has to be able to say which
-// shell ran, how long it took, and why it failed.
-type shellEnvironmentResult struct {
-	shell     string
-	variables map[string]string
-	duration  time.Duration
-	err       error
-}
-
-// A mutex and a flag rather than sync.Once, because the diagnostics view can
-// ask for a fresh reading and Once has no way back.
-var (
-	shellEnvironmentMutex  sync.Mutex
-	shellEnvironmentLoaded bool
-	shellEnvironmentCache  shellEnvironmentResult
-)
-
-// cachedShellEnvironment reads the environment at most once, unless asked to
-// do it again.
-//
-// The lock is held across the whole read on purpose: a second caller arriving
-// mid-read should wait for that answer rather than start another shell.
-func cachedShellEnvironment(reload bool) shellEnvironmentResult {
-	shellEnvironmentMutex.Lock()
-	defer shellEnvironmentMutex.Unlock()
-
-	if shellEnvironmentLoaded && !reload {
-		return shellEnvironmentCache
-	}
-
-	start := time.Now()
-	variables, err := readLoginShellEnvironment()
-
-	shellEnvironmentCache = shellEnvironmentResult{
-		shell:     loginShellPath(),
-		variables: variables,
-		duration:  time.Since(start),
-		err:       err,
-	}
-	shellEnvironmentLoaded = true
-	return shellEnvironmentCache
-}
-
-// loginShellPath is the shell to run, and the one the report names.
+// loginShellPath is the shell to run.
 func loginShellPath() string {
 	if shell := os.Getenv("SHELL"); shell != "" {
 		return shell
@@ -101,16 +55,14 @@ func loginShellPath() string {
 // running them does not work — they are programs, and values routinely come
 // from $(…), from `source`, or from a branch.
 //
-// The goal is to match what the user's terminal would have, not to hunt for
-// variables wherever they might hide. If their terminal cannot see it, neither
-// should mssh.
+// Computed once and kept: it costs most of a second, and nothing that uses it
+// needs a fresher answer. sync.OnceValues also makes a second caller arriving
+// mid-read wait for that answer rather than start another shell.
 //
-// Computed once and kept: it costs most of a second, and it cannot change
-// while the app is running.
-func loginShellEnvironment() (map[string]string, error) {
-	result := cachedShellEnvironment(false)
-	return result.variables, result.err
-}
+// A variable holding a function rather than a function, so a test can put a
+// fixed answer in its place without running a shell — the same seam Store has
+// for its clock.
+var loginShellEnvironment = sync.OnceValues(readLoginShellEnvironment)
 
 // WarmShellEnvironment fills that cache from a goroutine, so the second it
 // costs is not spent while somebody is waiting to connect.
@@ -118,97 +70,9 @@ func WarmShellEnvironment() {
 	go func() { _, _ = loginShellEnvironment() }()
 }
 
-/* ---------------- diagnostics ---------------- */
-
-// ShellEnvironmentVariable is one row of the report.
-type ShellEnvironmentVariable struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-	// Masked says the value was withheld, so the UI can label it rather than
-	// leave the reader wondering why a variable appears to hold dots.
-	Masked bool `json:"masked"`
-	// Interesting marks the handful that explain a failed connection, so the
-	// UI can show those first and keep the other sixty behind a toggle.
-	Interesting bool `json:"interesting"`
-}
-
-// ShellEnvironmentReport is what the Appearance page shows.
-//
-// Inheriting an environment silently would make behaviour depend on state
-// nobody can see. This is the other half of that bargain: it is automatic, and
-// it says what it did.
-type ShellEnvironmentReport struct {
-	Shell      string                     `json:"shell"`
-	DurationMS int64                      `json:"durationMs"`
-	Error      string                     `json:"error"`
-	Variables  []ShellEnvironmentVariable `json:"variables"`
-}
-
-// secretishName matches variables whose value must never leave this process.
-//
-// AWS_ACCESS_KEY_ID matches on "key" and is only an identifier rather than a
-// secret. Masking it costs nothing; the reverse mistake cannot be undone.
-var secretishName = regexp.MustCompile(`(?i)secret|token|key|password|passwd|credential`)
-
-// interestingName marks the variables that decide whether a connection works.
-func interestingName(name string) bool {
-	switch {
-	case name == "PATH", name == "SSH_AUTH_SOCK":
-		return true
-	case strings.HasPrefix(name, "AWS_"):
-		return true
-	case strings.HasSuffix(strings.ToUpper(name), "_PROXY"):
-		return true
-	}
-	return false
-}
-
-// ShellEnvironmentSnapshot builds the report. Passing reload runs the shell
-// again, for the button next to it.
-//
-// Masking happens here rather than in the frontend, so a secret never crosses
-// the boundary at all — there is nothing to leak into a log, a screenshot or a
-// crash report on the other side.
-func ShellEnvironmentSnapshot(reload bool) ShellEnvironmentReport {
-	result := cachedShellEnvironment(reload)
-
-	report := ShellEnvironmentReport{
-		Shell:      result.shell,
-		DurationMS: result.duration.Milliseconds(),
-		Variables:  []ShellEnvironmentVariable{},
-	}
-	if result.err != nil {
-		report.Error = result.err.Error()
-	}
-
-	for name, value := range result.variables {
-		row := ShellEnvironmentVariable{
-			Name:        name,
-			Value:       value,
-			Interesting: interestingName(name),
-		}
-		if secretishName.MatchString(name) {
-			row.Value = ""
-			row.Masked = true
-		}
-		report.Variables = append(report.Variables, row)
-	}
-
-	// Interesting ones first, then alphabetical: a map iterates in a different
-	// order every time, and a list that reshuffles on every render is unusable.
-	sort.Slice(report.Variables, func(first int, second int) bool {
-		left, right := report.Variables[first], report.Variables[second]
-		if left.Interesting != right.Interesting {
-			return left.Interesting
-		}
-		return left.Name < right.Name
-	})
-
-	return report
-}
-
-// readLoginShellEnvironment does the work. It is kept apart from the cached
-// wrapper so a test can call it more than once in one process.
+// readLoginShellEnvironment does the work, uncached. Tests call it directly,
+// and so will importing AWS keys from the shell, which has to see an edit made
+// to ~/.zshrc a minute ago.
 func readLoginShellEnvironment() (map[string]string, error) {
 	shell := loginShellPath()
 

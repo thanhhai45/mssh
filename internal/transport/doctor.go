@@ -21,47 +21,31 @@ var commonBinDirectories = []string{
 	"/bin",
 }
 
-var adoptEnvironmentOnce sync.Once
+var adoptPathOnce sync.Once
 
-// ensureUsableEnvironment makes this process's environment resemble the one the
-// user's own terminal would have, once.
-//
-// Every caller wants the same thing in the end: that exec.LookPath finds `aws`
-// and `ssh`, and that whatever those programs read from the environment is
-// there when they look.
+// ensureUsableEnvironment makes sure exec.LookPath can find aws, ssh and
+// gcloud, whether mssh was started from a terminal or from Finder.
 func ensureUsableEnvironment() {
-	adoptEnvironmentOnce.Do(adoptLoginShellEnvironment)
+	adoptPathOnce.Do(adoptLoginShellPath)
 }
 
-// adoptLoginShellEnvironment copies the login shell's environment into this
-// process.
+// adoptLoginShellPath takes PATH from the user's login shell, and nothing else.
 //
-// Values already set here win. Someone who ran `AWS_PROFILE=other mssh` from a
-// terminal meant it, and a default from their shell profile must not overrule
-// them. The case this exists for — launched from Finder — has almost nothing
-// set, so almost everything gets filled in.
+// launchd hands an app opened from Finder a PATH of four system directories,
+// so aws and ssh installed through Homebrew, asdf or mise are not found. The
+// shell's PATH is merged in front of it rather than replacing it.
 //
-// PATH is the exception. launchd does hand this process a PATH, just a useless
-// one, so skipping it on the grounds that it is "already set" would defeat the
-// whole exercise. It is merged instead, the shell's entries first.
-func adoptLoginShellEnvironment() {
+// An earlier version adopted the whole environment. That reached further than
+// mssh needs: it has to find programs, not carry everything a shell profile
+// happens to export. AWS credentials now come from the workspace instead — see
+// docs/CREDENTIALS.md.
+func adoptLoginShellPath() {
 	variables, err := loginShellEnvironment()
 	if err != nil {
 		// Fall back to the old guess rather than to nothing at all.
 		extendPathWithCommonDirectories()
 		return
 	}
-
-	for name, value := range variables {
-		if name == "PATH" {
-			continue
-		}
-		if _, alreadySet := os.LookupEnv(name); alreadySet {
-			continue
-		}
-		_ = os.Setenv(name, value)
-	}
-
 	if shellPath := variables["PATH"]; shellPath != "" {
 		_ = os.Setenv("PATH", mergePath(shellPath, os.Getenv("PATH")))
 	}
@@ -179,14 +163,12 @@ func explainAWSFailure(profile string, output string) string {
 		strings.Contains(lowered, "you must specify a region"):
 		return fmt.Sprintf(
 			"no AWS credentials this app can see.\n\n"+
-				"mssh runs your login shell at startup and takes its environment, "+
-				"so anything exported in ~/.zshrc or ~/.zprofile should already be "+
-				"here. Check `echo $AWS_PROFILE` and `aws sts get-caller-identity` "+
-				"in a terminal: if they work there but not here, the export is "+
-				"probably in a file your login shell does not read.\n\n"+
-				"If you use SSO, run `%s`. Otherwise run `aws configure` to keep "+
-				"the credentials in ~/.aws/credentials, or set a profile and "+
-				"region on the workspace.", loginCommand)
+				"mssh does not take AWS keys from your shell environment. Either let "+
+				"the AWS CLI find them — run `%s` if you use SSO, or `aws configure` to "+
+				"keep them in ~/.aws/credentials, then set the profile on the "+
+				"workspace — or keep keys on the workspace itself: edit the workspace, "+
+				"choose \"Use keys stored in mssh\", and \"Import from shell\" copies "+
+				"the AWS_* variables your shell profile exports.", loginCommand)
 
 	case strings.Contains(lowered, "could not be found") && strings.Contains(lowered, "profile"):
 		return fmt.Sprintf("AWS profile %q is not configured in ~/.aws/config", profile)

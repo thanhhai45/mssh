@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -211,98 +210,41 @@ func TestReadLoginShellEnvironment(t *testing.T) {
 	})
 }
 
-func TestShellEnvironmentSnapshot(t *testing.T) {
-	fakeShell(t, envDump("",
-		"PATH=/x/y",
-		"AWS_PROFILE=prod",
-		"AWS_SECRET_ACCESS_KEY=hunter2",
-		"AWS_SESSION_TOKEN=abc123",
-		"aws_access_key_id=AKIA",
-		"MY_PASSWORD=letmein",
-		"HTTPS_PROXY=http://proxy:8080",
-		"SSH_AUTH_SOCK=/tmp/agent",
-		"EDITOR=vim",
-	))
-
-	report := ShellEnvironmentSnapshot(true)
-
-	if report.Shell == "" {
-		t.Error("the report does not name the shell it ran")
-	}
-	if report.Error != "" {
-		t.Fatalf("unexpected error: %s", report.Error)
+// TestAdoptLoginShellPathTakesNothingElse pins the narrowing: the shell's PATH
+// is merged in, and nothing else it exports reaches this process. No shell runs
+// here; loginShellEnvironment is replaced with a fixed answer.
+func TestAdoptLoginShellPathTakesNothingElse(t *testing.T) {
+	original := loginShellEnvironment
+	t.Cleanup(func() { loginShellEnvironment = original })
+	loginShellEnvironment = func() (map[string]string, error) {
+		return map[string]string{
+			"PATH":                  "/opt/homebrew/bin:/usr/bin",
+			"AWS_PROFILE":           "from-zshrc",
+			"AWS_SECRET_ACCESS_KEY": "hunter2",
+		}, nil
 	}
 
-	rows := map[string]ShellEnvironmentVariable{}
-	for _, row := range report.Variables {
-		rows[row.Name] = row
-	}
-
-	// The half that cannot be got wrong: a value that should never leave this
-	// process must not be in the report at all, not merely hidden by the UI.
-	for _, name := range []string{
-		"AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
-		"aws_access_key_id", "MY_PASSWORD",
-	} {
-		row, present := rows[name]
-		if !present {
-			t.Fatalf("%s is missing from the report", name)
-		}
-		if !row.Masked {
-			t.Errorf("%s was not masked", name)
-		}
-		if row.Value != "" {
-			t.Errorf("%s still carries its value %q", name, row.Value)
+	// t.Setenv first so the original values come back afterwards, then unset:
+	// the point is to see whether adopting puts them back.
+	t.Setenv("PATH", "/usr/bin:/bin")
+	for _, name := range []string{"AWS_PROFILE", "AWS_SECRET_ACCESS_KEY"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatalf("unset %s: %v", name, err)
 		}
 	}
 
-	// And the half that makes it useful: everything else is readable.
-	for name, want := range map[string]string{
-		"PATH":        "/x/y",
-		"AWS_PROFILE": "prod",
-		"HTTPS_PROXY": "http://proxy:8080",
-		"EDITOR":      "vim",
-	} {
-		if rows[name].Masked || rows[name].Value != want {
-			t.Errorf("%s = %q (masked=%v), want %q",
-				name, rows[name].Value, rows[name].Masked, want)
+	adoptLoginShellPath()
+
+	if got, want := os.Getenv("PATH"), "/opt/homebrew/bin:/usr/bin:/bin"; got != want {
+		t.Errorf("PATH = %q, want %q", got, want)
+	}
+	for _, name := range []string{"AWS_PROFILE", "AWS_SECRET_ACCESS_KEY"} {
+		// The name only, never the value, even a fake one: this is how a test
+		// learns to print secrets.
+		if _, set := os.LookupEnv(name); set {
+			t.Errorf("%s was adopted from the shell; only PATH may be", name)
 		}
-	}
-
-	if rows["EDITOR"].Interesting {
-		t.Error("EDITOR should not be flagged as interesting")
-	}
-	for _, name := range []string{"PATH", "AWS_PROFILE", "SSH_AUTH_SOCK", "HTTPS_PROXY"} {
-		if !rows[name].Interesting {
-			t.Errorf("%s should be flagged as interesting", name)
-		}
-	}
-
-	// A map iterates differently every time; the report must not.
-	if !sort.SliceIsSorted(report.Variables, func(first int, second int) bool {
-		left, right := report.Variables[first], report.Variables[second]
-		if left.Interesting != right.Interesting {
-			return left.Interesting
-		}
-		return left.Name < right.Name
-	}) {
-		t.Error("the report came back in an unstable order")
-	}
-}
-
-func TestShellEnvironmentSnapshotReportsFailure(t *testing.T) {
-	t.Setenv("SHELL", "/nope/not/a/shell")
-
-	report := ShellEnvironmentSnapshot(true)
-
-	if report.Error == "" {
-		t.Fatal("a failed reading must say so rather than look empty")
-	}
-	if report.Shell != "/nope/not/a/shell" {
-		t.Errorf("shell = %q, want the one that failed", report.Shell)
-	}
-	if report.Variables == nil {
-		t.Error("Variables is nil, which crosses to JavaScript as null")
 	}
 }
 
@@ -339,14 +281,11 @@ func TestReadLoginShellEnvironmentAgainstTheRealShell(t *testing.T) {
 	}
 }
 
-// TestAdoptLoginShellEnvironmentRepairsAFinderLikePATH proves the point of the
-// whole exercise, so it starts from the environment launchd actually hands a
-// double-clicked app.
-//
-// adoptLoginShellEnvironment calls os.Setenv for variables this process lacks,
-// and those are not restored afterwards — acceptable for a test that only runs
-// on demand.
-func TestAdoptLoginShellEnvironmentRepairsAFinderLikePATH(t *testing.T) {
+// TestAdoptLoginShellPathRepairsAFinderLikePATH proves the point of the whole
+// exercise, so it starts from the environment launchd actually hands a
+// double-clicked app. PATH is the only thing it changes, and t.Setenv puts that
+// back afterwards.
+func TestAdoptLoginShellPathRepairsAFinderLikePATH(t *testing.T) {
 	if os.Getenv("MSSH_TEST_REAL_SHELL") == "" {
 		t.Skip("set MSSH_TEST_REAL_SHELL=1 to run this against your own shell")
 	}
@@ -354,7 +293,7 @@ func TestAdoptLoginShellEnvironmentRepairsAFinderLikePATH(t *testing.T) {
 	const launchdPath = "/usr/bin:/bin:/usr/sbin:/sbin"
 	t.Setenv("PATH", launchdPath)
 
-	adoptLoginShellEnvironment()
+	adoptLoginShellPath()
 
 	repaired := strings.Split(os.Getenv("PATH"), ":")
 	if len(repaired) <= 4 {
