@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
@@ -81,5 +82,38 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	if _, err := second.GetConnection("c1"); err != nil {
 		t.Errorf("connection lost on the second open: %v", err)
+	}
+}
+
+// dropsParentTable matches a DROP of a table that other tables cascade from.
+// The \b after the name keeps connections_new — 003's temporary table — and
+// connection_secrets from matching.
+var dropsParentTable = regexp.MustCompile(
+	`(?i)\bDROP\s+TABLE\s+(IF\s+EXISTS\s+)?(connections|workspaces)\b`)
+
+// TestNoMigrationDropsAParentTable guards against the rebuild 003 did.
+//
+// With foreign keys on, DROP TABLE runs an implicit DELETE first, and the
+// cascade empties every child: rebuild connections and every saved password is
+// gone, with no error. PRAGMA foreign_keys cannot be switched off from inside
+// a migration, because migrate runs them all in one transaction.
+//
+// 003 is exempt: when it ran, nothing referenced connections yet. If a rebuild
+// is ever truly needed, change migrate to switch foreign keys off around it —
+// see docs/CREDENTIALS.md, vòng 1 — rather than exempting the migration here.
+func TestNoMigrationDropsAParentTable(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+
+	for _, m := range migrations {
+		if m.version <= 3 {
+			continue
+		}
+		if found := dropsParentTable.FindString(m.sql); found != "" {
+			t.Errorf("%s contains %q, which would cascade-delete every child row",
+				m.name, found)
+		}
 	}
 }

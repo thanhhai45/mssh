@@ -69,7 +69,7 @@ export function ConnectionDialog({
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    // Whether a password sits in the keychain is not part of the row, so it has
+    // Whether a password is saved is not part of the row, so it has
     // to be asked for separately.
     useEffect(() => {
         if (!connection) return
@@ -351,7 +351,7 @@ export function ConnectionDialog({
                                         {hasStored ? (
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="text-sm text-muted-foreground">
-                                                    A password is saved in your keychain.
+                                                    A password is saved on this machine.
                                                 </span>
                                                 <Button
                                                     type="button"
@@ -395,7 +395,7 @@ export function ConnectionDialog({
                                                         htmlFor="conn-remember"
                                                         className="cursor-pointer font-normal"
                                                     >
-                                                        Save it in my keychain
+                                                        Remember it on this machine
                                                     </Label>
                                                 </div>
                                             </>

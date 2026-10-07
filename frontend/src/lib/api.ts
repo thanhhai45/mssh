@@ -70,7 +70,7 @@ export const AUTH_META: Record<AuthMethod, {label: string; hint: string}> = {
   },
   password: {
     label: 'Password',
-    hint: 'Kept in your login keychain, never in the mssh database',
+    hint: 'Saved in the mssh database on this machine, never sent anywhere'
   },
 };
 

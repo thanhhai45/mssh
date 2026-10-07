@@ -373,7 +373,7 @@ export function WorkspaceNav() {
                                 ? pendingCount === 0
                                     ? 'This workspace has no connections. '
                                     : `Its ${pendingCount} connection${pendingCount === 1 ? '' : 's'} will be deleted too, along with any saved passwords. `
-                                : 'Any password saved for it will be removed from your keychain too. '}
+                                : 'Any password saved for it will be deleted too. '}
                             This cannot be undone.
                         </AlertDialogDescription>
                     </AlertDialogHeader>

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"mssh/internal/secrets"
 	"mssh/internal/session"
 	"mssh/internal/store"
@@ -69,7 +68,6 @@ func (app *App) DeleteWorkspace(id string) error {
 	for _, c := range conns {
 		// Every tab of every machine in here is about to point at nothing.
 		app.sessions.CloseConnection(c.ID)
-		app.forgetPassword(c.ID)
 	}
 	return nil
 }
@@ -108,7 +106,6 @@ func (app *App) DeleteConnection(id string) error {
 	// Closes a gap that predates multi-tab: the session used to keep running
 	// with nothing in the UI able to reach it.
 	app.sessions.CloseConnection(id)
-	app.forgetPassword(id)
 	return nil
 }
 
@@ -130,8 +127,8 @@ func (app *App) ParseSSHCommand(cmd string) (store.ParsedSSHCommand, error) {
 
 // ---------- Passwords ----------
 
-// SetConnectionPassword stores a password in the OS keychain. It never touches
-// the database.
+// SetConnectionPassword saves a password in the local database, in a table of
+// its own so that it never travels with the connection row to the frontend.
 func (app *App) SetConnectionPassword(id string, password string) error {
 	if _, err := app.store.GetConnection(id); err != nil {
 		return err
@@ -151,19 +148,10 @@ func (app *App) HasConnectionPassword(id string) bool {
 	return app.secrets.Has(id)
 }
 
-// forgetPassword removes a stored password as cleanup. A failure leaves an
-// unreachable keychain entry and nothing worse, so it is logged rather than
-// returned: the deletion the user asked for has already succeeded.
-func (app *App) forgetPassword(connectionID string) {
-	if err := app.secrets.Delete(connectionID); err != nil {
-		log.Printf("mssh: count not remove the keychain entry for %s: %v", connectionID, err)
-	}
-}
-
 /* ---------- Sessions ---------- */
 // ConnectSession opens a live connection.
 //
-// Pass an empty password to use whatever is in the keychain. If the connection
+// Pass an empty password to use the saved one, if any. If the connection
 // authenticates with a password and none can be found, this returns an error
 // wrapping transport.ErrPasswordRequired, and the caller is expected to ask the
 // user and call again.

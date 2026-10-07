@@ -77,7 +77,7 @@ export function PasswordDialog({
                                 onCheckedChange={(value) => setRemember(value === true)}
                             />
                             <Label htmlFor="session-remember" className="cursor-pointer font-normal">
-                                Save it in my keychain
+                                Remember it on this machine
                             </Label>
                         </div>
                     </div>

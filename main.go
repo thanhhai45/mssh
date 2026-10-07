@@ -8,7 +8,6 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 
-	"mssh/internal/secrets"
 	"mssh/internal/session"
 	"mssh/internal/store"
 )
@@ -32,8 +31,14 @@ func main() {
 
 	log.Printf("mssh: database at %s", dbPath)
 
+	passwords := st.ConnectionPasswords()
+
+	// Passwords saved by earlier versions are in the OS keychain. Move them
+	// here once after that the keychain is never read again.
+	moveKeychainPasswords(st, passwords)
+
 	// Create an instance of the app structure
-	app := NewApp(st, secrets.NewKeyring(), session.NewManager())
+	app := NewApp(st, passwords, session.NewManager())
 
 	// Create application with options
 	err = wails.Run(&options.App{

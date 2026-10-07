@@ -46,7 +46,7 @@ func (k ConnectionKind) UsesAWS() bool {
 }
 
 // NeedsPassword reports whether opening a session for this connection requires
-// a password, from the keychain or from the user.
+// a password, saved or asked for.
 func (c Connection) NeedsPassword() bool {
 	return c.Kind.UsesSSH() && c.AuthMethod == AuthPassword
 }
