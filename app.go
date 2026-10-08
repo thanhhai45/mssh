@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"mssh/internal/secrets"
 	"mssh/internal/session"
 	"mssh/internal/store"
@@ -148,6 +150,138 @@ func (app *App) HasConnectionPassword(id string) bool {
 	return app.secrets.Has(id)
 }
 
+// ---------- AWS keys kept on a workspace ----------
+
+// storedAWSCredentials returns the workspace's own keys, or nil when it lets
+// the AWS CLI find credentials itself.
+//
+// A workspace set to stored keys that has none is an error for the kinds that
+// run aws — falling back to the CLI would connect with whatever the machine
+// happens to have configured, which may be another account. A plain ssh
+// connection in that workspace needs no keys and is left alone.
+func (app *App) storedAWSCredentials(
+	connection store.Connection,
+	workspace store.Workspace,
+) (*transport.AWSCredentials, error) {
+	if workspace.AWSCredentialsSource != store.AWSCredentialsStored {
+		return nil, nil
+	}
+
+	secretAccessKey, err := app.store.GetWorkspaceSecret(workspace.ID, store.SecretAWSSecretAccessKey)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+
+	if secretAccessKey == "" || workspace.AWSAccessKeyID == "" {
+		if connection.Kind.UsesAWS() {
+			return nil, fmt.Errorf(
+				"workspace %q is set to use AWS keys stored in mssh, but none are "+
+					"saved - add them in the workspace settings", workspace.Name)
+		}
+		return nil, nil
+	}
+
+	sessionToken, err := app.store.GetWorkspaceSecret(workspace.ID, store.SecretAWSSessionToken)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+
+	return &transport.AWSCredentials{
+		AccessKeyID:     workspace.AWSAccessKeyID,
+		SecretAccessKey: secretAccessKey,
+		SessionToken:    sessionToken,
+	}, nil
+}
+
+// SetWorkspaceAWSSecret stores a workspace's secret access key, and its session
+// token when there is one. An empty token removes any stored before: moving
+// from temporary credentials to long-lived ones must not leave a stale token
+// behind that the CLI would still send.
+//
+// Secrets come in through here and never go back out. There is no
+// GetWorkspaceAWSSecret, on purpose; the frontend learns only whether one
+// exists, from HasWorkspaceAWSSecret.
+func (app *App) SetWorkspaceAWSSecret(workspaceID string, secretAccessKey string, sessionToken string) error {
+	if _, err := app.store.GetWorkspace(workspaceID); err != nil {
+		return err
+	}
+	if err := app.store.SetWorkspaceSecret(
+		workspaceID, store.SecretAWSSecretAccessKey, secretAccessKey); err != nil {
+		return err
+	}
+	if sessionToken == "" {
+		return app.store.DeleteWorkspaceSecret(workspaceID, store.SecretAWSSessionToken)
+	}
+	return app.store.SetWorkspaceSecret(workspaceID, store.SecretAWSSessionToken, sessionToken)
+}
+
+// HasWorkspaceAWSSecret reports whether a secret key is saved, so the UI can say
+// "saved" rather than show an empty field.
+func (app *App) HasWorkspaceAWSSecret(workspaceID string) bool {
+	return app.store.HasWorkspaceSecret(workspaceID, store.SecretAWSSecretAccessKey)
+}
+
+// ClearWorkspaceAWSSecret forgets the secret key and any session token.
+func (app *App) ClearWorkspaceAWSSecret(workspaceID string) error {
+	if err := app.store.DeleteWorkspaceSecret(
+		workspaceID, store.SecretAWSSecretAccessKey); err != nil {
+		return err
+	}
+	return app.store.DeleteWorkspaceSecret(workspaceID, store.SecretAWSSessionToken)
+}
+
+// PreviewAWSFromShell shows what Import would save, without saving it and
+// without the secret.
+func (app *App) PreviewAWSFromShell() (transport.AWSShellPreview, error) {
+	preview, _, err := transport.AWSFromShell()
+	return preview, err
+}
+
+// ImportAWSFromShell saves the keys found in the login shell to a workspace and
+// switches it to stored credentials.
+//
+// It runs the shell again rather than taking anything from the frontend: the
+// secret never crossed into JavaScript, so there is nothing there to take.
+func (app *App) ImportAWSFromShell(workspaceID string) error {
+	preview, credentials, err := transport.AWSFromShell()
+	if err != nil {
+		return err
+	}
+	if credentials == nil {
+		return fmt.Errorf("no AWS key pair was found in your login shell")
+	}
+
+	workspace, err := app.store.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+
+	// The secret first. If switching the workspace over then fails, it is
+	// left on the CLI with an unused secret, which is harmless; the other
+	// order could leave it set to stored keys with none saved.
+	if err := app.SetWorkspaceAWSSecret(
+		workspaceID, credentials.SecretAccessKey, credentials.SessionToken); err != nil {
+		return err
+	}
+
+	region := workspace.AWSRegion
+	if region == "" {
+		// Fill the region only when the workspace has none; never overwrite
+		// a choice made by hand.
+		region = preview.Region
+	}
+
+	_, err = app.store.UpdateWorkspace(workspaceID, store.WorkspaceInput{
+		Name:                 workspace.Name,
+		Color:                workspace.Color,
+		AWSProfile:           workspace.AWSProfile,
+		AWSRegion:            region,
+		AWSCredentialsSource: store.AWSCredentialsStored,
+		AWSAccessKeyID:       credentials.AccessKeyID,
+	})
+	return err
+}
+
 /* ---------- Sessions ---------- */
 // ConnectSession opens a live connection.
 //
@@ -179,17 +313,23 @@ func (app *App) ConnectSession(
 
 	resolvedAWS := store.ResolveAWS(connection, workspace)
 
+	credentials, err := app.storedAWSCredentials(connection, workspace)
+	if err != nil {
+		return "", err
+	}
+
 	config := transport.Config{
-		Kind:       string(connection.Kind),
-		Target:     connection.Target,
-		Port:       connection.Port,
-		Username:   connection.Username,
-		AuthMethod: string(connection.AuthMethod),
-		KeyPath:    connection.KeyPath,
-		Password:   password,
-		AWSProfile: resolvedAWS.Profile,
-		AWSRegion:  resolvedAWS.Region,
-		Extra:      connection.Extra,
+		Kind:           string(connection.Kind),
+		Target:         connection.Target,
+		Port:           connection.Port,
+		Username:       connection.Username,
+		AuthMethod:     string(connection.AuthMethod),
+		KeyPath:        connection.KeyPath,
+		Password:       password,
+		AWSProfile:     resolvedAWS.Profile,
+		AWSRegion:      resolvedAWS.Region,
+		Extra:          connection.Extra,
+		AWSCredentials: credentials,
 	}
 
 	// The id is made here rather than inside the manager because it is needed

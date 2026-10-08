@@ -43,6 +43,8 @@ export function WorkspaceDialog({
                 color,
                 awsProfile: awsProfile.trim(),
                 awsRegion: awsRegion.trim(),
+                awsCredentialsSource: workspace?.awsCredentialsSource ?? 'cli',
+                awsAccessKeyId: workspace?.awsAccessKeyId ?? '',
             }
             if (workspace) {
                 await updateWorkspace(workspace.id, input)

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -246,6 +247,64 @@ func TestAdoptLoginShellPathTakesNothingElse(t *testing.T) {
 			t.Errorf("%s was adopted from the shell; only PATH may be", name)
 		}
 	}
+}
+
+func TestAWSFromShell(t *testing.T) {
+	t.Run("a full pair", func(t *testing.T) {
+		fakeShell(t, envDump("",
+			"PATH=/x",
+			"AWS_ACCESS_KEY_ID=AKIAFROMSHELL",
+			"AWS_SECRET_ACCESS_KEY=never-in-preview-4b2d",
+			"AWS_SESSION_TOKEN=tok",
+			"AWS_DEFAULT_REGION=ap-southeast-1",
+			"GITHUB_TOKEN=not-ours",
+		))
+
+		preview, credentials, err := AWSFromShell()
+		if err != nil {
+			t.Fatalf("AWSFromShell: %v", err)
+		}
+		if credentials == nil {
+			t.Fatal("a full key pair came back as nil credentials")
+		}
+		if credentials.SecretAccessKey != "never-in-preview-4b2d" || credentials.SessionToken != "tok" {
+			t.Error("the credentials do not carry what the shell exported")
+		}
+		if preview.AccessKeyID != "AKIAFROMSHELL" || !preview.HasSecretAccessKey || !preview.HasSessionToken {
+			t.Errorf("preview = %+v", preview)
+		}
+		// AWS_REGION is absent, so the older name fills in.
+		if preview.Region != "ap-southeast-1" {
+			t.Errorf("region = %q, want the AWS_DEFAULT_REGION fallback", preview.Region)
+		}
+
+		// The preview goes to the frontend: marshal it the way Wails would and
+		// make sure neither the secret nor anything that is not AWS_* is in it.
+		sent, err := json.Marshal(preview)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		for _, leak := range []string{"never-in-preview-4b2d", "tok\"", "not-ours"} {
+			if strings.Contains(string(sent), leak) {
+				t.Errorf("the preview carries %q", leak)
+			}
+		}
+	})
+
+	t.Run("half a pair", func(t *testing.T) {
+		fakeShell(t, envDump("", "AWS_ACCESS_KEY_ID=AKIAONLY", "AWS_PROFILE=prod"))
+
+		preview, credentials, err := AWSFromShell()
+		if err != nil {
+			t.Fatalf("AWSFromShell: %v", err)
+		}
+		if credentials != nil {
+			t.Error("a key id without its secret was offered as credentials")
+		}
+		if preview.Profile != "prod" {
+			t.Errorf("profile = %q; the UI suggests it when there are no keys", preview.Profile)
+		}
+	})
 }
 
 /* ---------------- smoke tests against the real shell ---------------- */

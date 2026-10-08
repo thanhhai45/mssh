@@ -133,3 +133,52 @@ func readLoginShellEnvironment() (map[string]string, error) {
 	}
 	return variables, nil
 }
+
+// AWSShellPreview is what the import button shows before anything is saved:
+// enough to recognise the keys, never the secret itself
+type AWSShellPreview struct {
+	AccessKeyID        string `json:"accessKeyId"`
+	HasSecretAccessKey bool   `json:"hasSecretAccessKey"`
+	HasSessionToken    bool   `json:"hasSessionToken"`
+	Region             string `json:"region"`
+	Profile            string `json:"profile"`
+}
+
+// AWSFromShell runs the login shell once and picks out the AWS variables, and
+// only those: six names, looked up one by one, never a walk over everything
+// the shell exported. It reads fresh rather than from the startup cache,
+// because the usual reason to press the button is having just edited ~/.zshrc.
+//
+// The preview is safe to send to the frontend. The credentials are not: the
+// caller keeps them in Go. They are nil unless both halves of a key pair were
+// found.
+func AWSFromShell() (AWSShellPreview, *AWSCredentials, error) {
+	variables, err := readLoginShellEnvironment()
+	if err != nil {
+		return AWSShellPreview{}, nil, err
+	}
+
+	region := variables["AWS_REGION"]
+	if region == "" {
+		region = variables["AWS_DEFAULT_REGION"]
+	}
+
+	preview := AWSShellPreview{
+		AccessKeyID:        variables["AWS_ACCESS_KEY_ID"],
+		HasSecretAccessKey: variables["AWS_SECRET_ACCESS_KEY"] != "",
+		HasSessionToken:    variables["AWS_SESSION_TOKEN"] != "",
+		Region:             region,
+		Profile:            variables["AWS_PROFILE"],
+	}
+
+	// A key id without its secret, or the reverse, is not a usable pair.
+	if preview.AccessKeyID == "" || !preview.HasSecretAccessKey {
+		return preview, nil, nil
+	}
+
+	return preview, &AWSCredentials{
+		AccessKeyID:     variables["AWS_ACCESS_KEY_ID"],
+		SecretAccessKey: variables["AWS_SECRET_ACCESS_KEY"],
+		SessionToken:    variables["AWS_SESSION_TOKEN"],
+	}, nil
+}

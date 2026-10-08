@@ -6,6 +6,10 @@ export function CheckSSMTools() {
   return window['go']['main']['App']['CheckSSMTools']();
 }
 
+export function ClearWorkspaceAWSSecret(arg1) {
+  return window['go']['main']['App']['ClearWorkspaceAWSSecret'](arg1);
+}
+
 export function ConnectSession(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ConnectSession'](arg1, arg2, arg3, arg4);
 }
@@ -54,6 +58,14 @@ export function HasConnectionPassword(arg1) {
   return window['go']['main']['App']['HasConnectionPassword'](arg1);
 }
 
+export function HasWorkspaceAWSSecret(arg1) {
+  return window['go']['main']['App']['HasWorkspaceAWSSecret'](arg1);
+}
+
+export function ImportAWSFromShell(arg1) {
+  return window['go']['main']['App']['ImportAWSFromShell'](arg1);
+}
+
 export function ListConnections(arg1) {
   return window['go']['main']['App']['ListConnections'](arg1);
 }
@@ -74,6 +86,10 @@ export function ParseSSHCommand(arg1) {
   return window['go']['main']['App']['ParseSSHCommand'](arg1);
 }
 
+export function PreviewAWSFromShell() {
+  return window['go']['main']['App']['PreviewAWSFromShell']();
+}
+
 export function ReorderWorkspaces(arg1) {
   return window['go']['main']['App']['ReorderWorkspaces'](arg1);
 }
@@ -92,6 +108,10 @@ export function SetConnectionPassword(arg1, arg2) {
 
 export function SetSetting(arg1, arg2) {
   return window['go']['main']['App']['SetSetting'](arg1, arg2);
+}
+
+export function SetWorkspaceAWSSecret(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetWorkspaceAWSSecret'](arg1, arg2, arg3);
 }
 
 export function UpdateConnection(arg1, arg2) {

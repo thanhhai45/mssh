@@ -133,6 +133,8 @@ export namespace store {
 	    color: string;
 	    awsProfile: string;
 	    awsRegion: string;
+	    awsCredentialsSource: string;
+	    awsAccessKeyId: string;
 	    sortOrder: number;
 	    createdAt: number;
 	    updatedAt: number;
@@ -148,6 +150,8 @@ export namespace store {
 	        this.color = source["color"];
 	        this.awsProfile = source["awsProfile"];
 	        this.awsRegion = source["awsRegion"];
+	        this.awsCredentialsSource = source["awsCredentialsSource"];
+	        this.awsAccessKeyId = source["awsAccessKeyId"];
 	        this.sortOrder = source["sortOrder"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
@@ -158,6 +162,8 @@ export namespace store {
 	    color: string;
 	    awsProfile: string;
 	    awsRegion: string;
+	    awsCredentialsSource: string;
+	    awsAccessKeyId: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceInput(source);
@@ -169,6 +175,33 @@ export namespace store {
 	        this.color = source["color"];
 	        this.awsProfile = source["awsProfile"];
 	        this.awsRegion = source["awsRegion"];
+	        this.awsCredentialsSource = source["awsCredentialsSource"];
+	        this.awsAccessKeyId = source["awsAccessKeyId"];
+	    }
+	}
+
+}
+
+export namespace transport {
+	
+	export class AWSShellPreview {
+	    accessKeyId: string;
+	    hasSecretAccessKey: boolean;
+	    hasSessionToken: boolean;
+	    region: string;
+	    profile: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AWSShellPreview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accessKeyId = source["accessKeyId"];
+	        this.hasSecretAccessKey = source["hasSecretAccessKey"];
+	        this.hasSessionToken = source["hasSessionToken"];
+	        this.region = source["region"];
+	        this.profile = source["profile"];
 	    }
 	}
 
