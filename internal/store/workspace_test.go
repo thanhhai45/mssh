@@ -166,3 +166,69 @@ func TestReorderWorkspaces(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceCredentialsSource(t *testing.T) {
+	s := openTest(t)
+
+	// Nothing said means the AWS CLI decides, exactly as before stored keys.
+	plain, err := s.CreateWorkspace(WorkspaceInput{Name: "Plain"})
+	if err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
+	}
+	if plain.AWSCredentialsSource != AWSCredentialsFromCLI {
+		t.Errorf("default source = %q, want %q", plain.AWSCredentialsSource, AWSCredentialsFromCLI)
+	}
+
+	stored, err := s.CreateWorkspace(WorkspaceInput{
+		Name:                 "Stored",
+		AWSCredentialsSource: AWSCredentialsStored,
+		AWSAccessKeyID:       "  AKIAEXAMPLE  ",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkspace stored: %v", err)
+	}
+
+	// Read back through both paths: Get and List share workspaceScanTargets,
+	// and this is what proves the new columns are in it, in the right place.
+	got, err := s.GetWorkspace(stored.ID)
+	if err != nil {
+		t.Fatalf("GetWorkspace: %v", err)
+	}
+	if got.AWSCredentialsSource != AWSCredentialsStored || got.AWSAccessKeyID != "AKIAEXAMPLE" {
+		t.Errorf("Get = %q / %q, want stored / AKIAEXAMPLE",
+			got.AWSCredentialsSource, got.AWSAccessKeyID)
+	}
+	list, err := s.ListWorkspaces()
+	if err != nil {
+		t.Fatalf("ListWorkspaces: %v", err)
+	}
+	found := false
+	for _, ws := range list {
+		if ws.ID == stored.ID {
+			found = ws.AWSCredentialsSource == AWSCredentialsStored && ws.AWSAccessKeyID == "AKIAEXAMPLE"
+		}
+	}
+	if !found {
+		t.Error("List did not return the stored source and key id")
+	}
+
+	// Back to the CLI through Update.
+	updated, err := s.UpdateWorkspace(stored.ID, WorkspaceInput{
+		Name: "Stored", AWSCredentialsSource: AWSCredentialsFromCLI,
+	})
+	if err != nil {
+		t.Fatalf("UpdateWorkspace: %v", err)
+	}
+	if updated.AWSCredentialsSource != AWSCredentialsFromCLI || updated.AWSAccessKeyID != "" {
+		t.Errorf("after update = %q / %q, want cli / empty",
+			updated.AWSCredentialsSource, updated.AWSAccessKeyID)
+	}
+
+	// A value that is neither is refused on both paths, not stored.
+	if _, err := s.CreateWorkspace(WorkspaceInput{Name: "Typo", AWSCredentialsSource: "stord"}); err == nil {
+		t.Error("CreateWorkspace accepted an unknown source")
+	}
+	if _, err := s.UpdateWorkspace(stored.ID, WorkspaceInput{Name: "Typo", AWSCredentialsSource: "stord"}); err == nil {
+		t.Error("UpdateWorkspace accepted an unknown source")
+	}
+}
