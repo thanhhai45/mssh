@@ -1,6 +1,6 @@
 import * as App from '../../wailsjs/go/main/App';
 import {EventsOn} from '../../wailsjs/runtime/runtime';
-import type {session, store} from '../../wailsjs/go/models';
+import type {session, store, transport} from '../../wailsjs/go/models';
 import {asSessionId, type SessionId} from './ids';
 
 /* ---------------- Types ---------------- */
@@ -12,6 +12,9 @@ export type ConnectionInput = store.ConnectionInput;
 export type ParsedSSHCommand = store.ParsedSSHCommand;
 export type ResolvedAWS = store.ResolvedAWS;
 export type SessionInfo = Omit<session.Info, 'sessionId'> & {sessionId: SessionId};
+export type AWSShellPreview = transport.AWSShellPreview;
+/** Where a workspace's AWS credentials come from. Must match store.AWSCredentials* in Go. */
+export type AWSCredentialsSource = 'cli' | 'stored';
 
 /** Go sends these as plain strings. These are the sets it actually accepts. */
 export type ConnectionKind = 'ssh' | 'ssm' | 'ssm-ssh' | 'ssh-config';
@@ -166,6 +169,14 @@ export const api = {
   moveConnection: (id: string, toWorkspaceId: string): Promise<void> => App.MoveConnection(id, toWorkspaceId),
   parseSSHCommand: (command: string): Promise<ParsedSSHCommand> => App.ParseSSHCommand(command),
   resolveAWS: (connectionId: string): Promise<ResolvedAWS> => App.ResolveAWSForConnection(connectionId),
+  
+  /** Secrets go in and never come back: there is deliberately no getter. */
+  setWorkspaceAWSSecret: (workspaceId: string, secretAccessKey: string, sessionToken: string): Promise<void> =>
+    App.SetWorkspaceAWSSecret(workspaceId, secretAccessKey, sessionToken),
+  hasWorkspaceAWSSecret: (workspaceId: string): Promise<boolean> => App.HasWorkspaceAWSSecret(workspaceId),
+  clearWorkspaceAWSSecret: (workspaceId: string): Promise<void> => App.ClearWorkspaceAWSSecret(workspaceId),
+  previewAWSFromShell: (): Promise<AWSShellPreview> => App.PreviewAWSFromShell(),
+  importAWSFromShell: (workspaceId: string): Promise<void> => App.ImportAWSFromShell(workspaceId),
 
   setConnectionPassword: (id: string, password: string): Promise<void> => App.SetConnectionPassword(id, password),
   deleteConnectionPassword: (id: string): Promise<void> => App.DeleteConnectionPassword(id),
