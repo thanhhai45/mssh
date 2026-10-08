@@ -1,7 +1,10 @@
 package store
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -160,5 +163,38 @@ func TestOpenIsIdempotent(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("workspace count = %d after reopen, want 1", count)
+	}
+}
+
+// TestOpenRestrictsTheDatabaseToItsOwner guards restrictToOwner: the file holds
+// credentials, so nobody but its owner may read it.
+func TestOpenRestrictsTheDatabaseToItsOwner(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no owner/group/other permission bits")
+	}
+
+	path := filepath.Join(t.TempDir(), "test.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	// A write, so the -wal file certainly exists by the time it is checked.
+	if _, err := s.CreateWorkspace(WorkspaceInput{Name: "Perm"}); err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
+	}
+
+	for _, file := range []string{path, path + "-wal", path + "-shm"} {
+		info, err := os.Stat(file)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			t.Fatalf("stat %s: %v", file, err)
+		}
+		if mode := info.Mode().Perm(); mode&0o077 != 0 {
+			t.Errorf("%s is %o; group and others must have no access", filepath.Base(file), mode)
+		}
 	}
 }

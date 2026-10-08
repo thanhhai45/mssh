@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,7 +58,30 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := restrictToOwner(path); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return s, nil
+}
+
+// restrictToOwner makes the database readable by its owner only.
+//
+// The directory is 0700 already, and that is what keeps other users out. This
+// is the second lock: the file now holds passwords and AWS keys, so it should
+// not depend on nobody ever loosening the directory. The -wal and -shm files
+// hold the same data as the main file and get the same treatment; SQLite gives
+// any it creates later the main file's permissions.
+//
+// On Windows, Chmod can only toggle read-only and 0600 leaves the file
+// writable; access there is governed by the profile directory's ACL instead.
+func restrictToOwner(path string) error {
+	for _, file := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(file, 0o600); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("restrict database permissions: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error {

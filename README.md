@@ -57,6 +57,9 @@ xattr -dr com.apple.quarantine /Applications/mssh.app
 
 - **Workspaces** — group connections by account, environment or customer, each
   with its own colour and AWS defaults.
+- **AWS without the AWS CLI set up** — a workspace can keep its own key pair,
+  typed in or imported from the `AWS_*` variables your shell exports. Workspaces
+  that use `~/.aws` or SSO keep working exactly as before.
 - **Four ways to reach a machine** — a `Host` alias from your existing
   `~/.ssh/config`, direct SSH, AWS Session Manager, or SSH tunnelled through
   Session Manager.
@@ -260,23 +263,28 @@ then connect again and accept the new fingerprint.
 
 ## Security
 
-- **Passwords are never written to the database.** They go into the macOS
-  Keychain (Credential Manager on Windows, Secret Service on Linux), and the
-  database only records that a connection uses password authentication. You can
-  verify this yourself:
+- **Credentials stay on this machine.** SSH passwords and any AWS keys a
+  workspace keeps are stored in the local database, in tables of their own that
+  never travel to the UI with the rest of a connection, and are never sent
+  anywhere. The database is readable by you alone — `0600` in a `0700`
+  directory, the same protection the AWS CLI gives `~/.aws/credentials`:
 
   ```bash
-  strings ~/Library/Application\ Support/mssh/mssh.db | grep '<your password>'
+  ls -la ~/Library/Application\ Support/mssh/
   ```
 
-  It finds nothing.
-
-- **Deleting a connection deletes its password**, and so does deleting the
-  workspace that contains it.
+- **Deleting a connection deletes its password**, and deleting a workspace
+  deletes its AWS keys and every password inside it. The database does this
+  itself, through foreign keys.
 - **Host keys are always verified.** There is no "connect anyway" option, by
   design.
-- **AWS credentials are never handled by mssh.** SSO refresh, MFA and
-  assume-role are all done by the AWS CLI in a separate process.
+- **AWS uses the CLI's own configuration by default.** SSO refresh, MFA and
+  assume-role are all done by the AWS CLI in a separate process. A workspace set
+  to use stored keys hands them to `aws` through its environment, never its
+  command line, where every user on the machine could see them with `ps`.
+- **Only `PATH` is taken from your shell**, so mssh can find `aws` and `ssh`
+  when opened from Finder. *Import from shell* reads the six `AWS_*` variables
+  it needs, when you press it, and nothing else.
 - **Passphrase-protected SSH keys are not read directly.** Load those into
   `ssh-agent` with `ssh-add` and choose the agent authentication method.
 
@@ -378,7 +386,9 @@ frontend/src/
 | `key ... is protected by a passphrase` | `ssh-add <key>`, then use the SSH agent method |
 | `the Session Manager plugin is not installed` | `brew install --cask session-manager-plugin` |
 | `your AWS session has expired` | Run the `aws sso login` command in the message |
-| `no AWS credentials this app can see` | mssh runs your login shell at startup and takes its environment, so exports in `~/.zshrc` or `~/.zprofile` do reach it. Check `aws sts get-caller-identity` in a terminal: if it works there but not here, the export lives in a file your login shell does not read. `aws configure` puts the credentials in `~/.aws/credentials`, which any process can read |
+| `no AWS credentials this app can see` | mssh does not take AWS keys from your shell environment. Either configure the AWS CLI (`aws sso login` or `aws configure`) and set the profile on the workspace, or edit the workspace, choose *Use keys stored in mssh* and press *Import from shell* |
+| `set to use AWS keys stored in mssh, but none are saved` | Edit the workspace and add the keys, or switch it back to the AWS CLI's configuration |
+| `the temporary AWS keys stored on this workspace have expired` | Temporary keys carry a session token that runs out. Import or paste fresh ones in the workspace settings |
 | `... is not reachable through Session Manager` | Check the instance is running, has the SSM Agent, and has an IAM role with `AmazonSSMManagedInstanceCore` |
 | `this AWS profile is not allowed to run ssm:StartSession` | Add that permission to the role or user |
 | `connection ... is already open` | The session is still running; disconnect it first |
