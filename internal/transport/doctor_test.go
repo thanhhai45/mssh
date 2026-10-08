@@ -3,6 +3,7 @@ package transport
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -172,5 +173,87 @@ func TestExpandHome(t *testing.T) {
 				t.Errorf("expandHome(%q) = %q, want %q", testCase.in, got, testCase.want)
 			}
 		})
+	}
+}
+
+func TestAWSEnvironment(t *testing.T) {
+	base := []string{
+		"PATH=/usr/bin",
+		"AWS_PROFILE=inherited",
+		"AWS_DEFAULT_PROFILE=inherited",
+		"AWS_ACCESS_KEY_ID=OLDKEY",
+		"AWS_SECURITY_TOKEN=stale",
+		"AWS_REGION=eu-west-1",
+	}
+
+	if got := awsEnvironment(base, nil); !slices.Equal(got, base) {
+		t.Errorf("nil credentials changed the environment: %v", got)
+	}
+
+	got := awsEnvironment(base, &AWSCredentials{
+		AccessKeyID: "AKIANEW", SecretAccessKey: "wJalrNEW",
+	})
+
+	count := map[string]int{}
+	values := map[string]string{}
+	for _, variable := range got {
+		name, value, _ := strings.Cut(variable, "=")
+		count[name]++
+		values[name] = value
+	}
+
+	// Replaced, not shadowed: exactly one of each, and the new one.
+	if count["AWS_ACCESS_KEY_ID"] != 1 || values["AWS_ACCESS_KEY_ID"] != "AKIANEW" {
+		t.Errorf("AWS_ACCESS_KEY_ID: %d of them, value %q",
+			count["AWS_ACCESS_KEY_ID"], values["AWS_ACCESS_KEY_ID"])
+	}
+	// Each of these would make the CLI use something other than the stored keys.
+	for _, name := range []string{"AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_SECURITY_TOKEN", "AWS_SESSION_TOKEN"} {
+		if count[name] != 0 {
+			t.Errorf("%s survived; it could outrank or taint the stored keys", name)
+		}
+	}
+	// Everything unrelated to credentials is untouched, region included.
+	if values["PATH"] != "/usr/bin" || values["AWS_REGION"] != "eu-west-1" {
+		t.Errorf("unrelated variables were lost: %v", got)
+	}
+
+	withToken := awsEnvironment(nil, &AWSCredentials{
+		AccessKeyID: "A", SecretAccessKey: "S", SessionToken: "T",
+	})
+	if !slices.Contains(withToken, "AWS_SESSION_TOKEN=T") {
+		t.Errorf("the session token was not passed on: %v", withToken)
+	}
+}
+
+func TestEffectiveProfile(t *testing.T) {
+	cli := Config{AWSProfile: "prod"}
+	stored := Config{AWSProfile: "prod", AWSCredentials: &AWSCredentials{AccessKeyID: "AKIA"}}
+
+	if got := effectiveProfile(cli); got != "prod" {
+		t.Errorf("without stored keys: %q, want the profile to pass through", got)
+	}
+	if got := effectiveProfile(stored); got != "" {
+		t.Errorf("with stored keys: %q, want none — --profile would outrank them", got)
+	}
+}
+
+func TestExplainStoredKeysFailure(t *testing.T) {
+	tests := []struct {
+		output  string
+		mustSay string
+	}{
+		{"An error occurred (ExpiredToken) when calling the GetCallerIdentity operation: The security token included in the request is expired", "expired"},
+		{`You must specify a region. You can also configure your region by running "aws configure".`, "no region"},
+		{"An error occurred (InvalidClientTokenId) when calling the GetCallerIdentity operation: The security token included in the request is invalid.", "InvalidClientTokenId"},
+	}
+	for _, testCase := range tests {
+		got := explainStoredKeysFailure(testCase.output)
+		if !strings.Contains(got, testCase.mustSay) {
+			t.Errorf("explanation %q does not mention %q", got, testCase.mustSay)
+		}
+		if strings.Contains(got, "sso login") {
+			t.Errorf("explanation %q sends a stored-keys user to aws sso login", got)
+		}
 	}
 }

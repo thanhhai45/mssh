@@ -45,7 +45,9 @@ func (sshConfigDialer) Dial(
 	alias := strings.TrimSpace(config.Target)
 
 	command := exec.CommandContext(dialContext, "ssh", alias)
-	command.Env = pseudoTerminalEnvironment()
+	// A Host block whose ProxyCommand runs aws ssm start-session needs the
+	// workspace's keys exactly as much as the ssm kind does.
+	command.Env = awsEnvironment(pseudoTerminalEnvironment(), config.AWSCredentials)
 
 	return startPTYProcess(command, size, onOutput, onExit, func(output string) string {
 		return explainSSHCommandFailure(alias, output)

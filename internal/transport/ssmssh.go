@@ -36,7 +36,7 @@ func (ssmSSHDialer) Preflight(config Config) error {
 	if err := requireAWSTools(); err != nil {
 		return err
 	}
-	if err := checkAWSCredentials(config.AWSProfile, config.AWSRegion); err != nil {
+	if err := checkAWSCredentials(config); err != nil {
 		return err
 	}
 	// The SSH half has its own requirements: a username, and usable
@@ -142,10 +142,10 @@ func startSSMTunnel(dialContext context.Context, config Config) (*processConn, e
 		"--target", config.Target,
 		"--document-name", documentName,
 		"--parameters", fmt.Sprintf("portNumber=%d", portNumber),
-	}, awsFlags(config.AWSProfile, config.AWSRegion)...)
+	}, awsFlags(effectiveProfile(config), config.AWSRegion)...)
 
 	command := exec.CommandContext(dialContext, "aws", arguments...)
-	command.Env = os.Environ()
+	command.Env = awsEnvironment(os.Environ(), config.AWSCredentials)
 
 	// No pty here, unlike the plain ssm kind. This process is carrying the SSH
 	// wire protocol, and a terminal would translate newlines and interpret

@@ -9,9 +9,9 @@ import (
 // ssmDialer opens a session by running `aws ssm start-session` under a local
 // pseudo-terminal.
 //
-// Nothing in this file handles credentials. SSO refresh, MFA and assume-role
-// are the AWS CLI's business, and mssh never sees a secret. That is a feature,
-// not a shortcut.
+// SSO refresh, MFA and assume-role remain the AWS CLI's business. mssh only
+// hands over a key pair when the workspace keeps its own, and then through the
+// environment, never the command line
 type ssmDialer struct{}
 
 // Compile-time check, reported here rather than wherever For() assigns it.
@@ -26,7 +26,7 @@ func (ssmDialer) Preflight(config Config) error {
 	if err := requireAWSTools(); err != nil {
 		return err
 	}
-	return checkAWSCredentials(config.AWSProfile, config.AWSRegion)
+	return checkAWSCredentials(config)
 }
 
 func (ssmDialer) Dial(
@@ -38,11 +38,11 @@ func (ssmDialer) Dial(
 ) (Session, error) {
 	arguments := append(
 		[]string{"ssm", "start-session", "--target", config.Target},
-		awsFlags(config.AWSProfile, config.AWSRegion)...,
+		awsFlags(effectiveProfile(config), config.AWSRegion)...,
 	)
 
 	command := exec.CommandContext(dialContext, "aws", arguments...)
-	command.Env = pseudoTerminalEnvironment()
+	command.Env = awsEnvironment(pseudoTerminalEnvironment(), config.AWSCredentials)
 
 	// session-manager-plugin looks at whether its stdin is a terminal to decide
 	// on raw mode, and reads the window size from it. Give it a plain pipe and

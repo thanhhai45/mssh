@@ -123,15 +123,70 @@ func awsFlags(profile string, region string) []string {
 	return flags
 }
 
+// awsCredentialVariables are every variable that can make the AWS CLI use
+// credentials other than the ones mssh hands it. Measured against awws-cli 2.22;
+// a profile named by AWS_PROFILE or AWS_DEFAULT_PROFILE outranks keys in the
+// environment, and AWS_SECURITY_TOKEN - the old name - is still read as the session token.
+var awsCredentialVariables = map[string]bool{
+	"AWS_PROFILE":           true,
+	"AWS_DEFAULT_PROFILE":   true,
+	"AWS_ACCESS_KEY_ID":     true,
+	"AWS_SECRET_ACCESS_KEY": true,
+	"AWS_SESSION_TOKEN":     true,
+	"AWS_SECURITY_TOKEN":    true,
+}
+
+// awsEnvironment is the environment for a child that will run aws, directly or
+// through an ssh ProxyCommand
+//
+// With stored keys, every variable above is dropped first. Two sets of
+// credentials in one environment is not a configuration anybody chose, and
+// which one the CLI picks is not something to leave to chance.
+func awsEnvironment(base []string, credentials *AWSCredentials) []string {
+	if credentials == nil {
+		return base
+	}
+
+	kept := make([]string, 0, len(base)+3)
+	for _, variable := range base {
+		name, _, _ := strings.Cut(variable, "=")
+		if awsCredentialVariables[name] {
+			continue
+		}
+		kept = append(kept, variable)
+	}
+
+	kept = append(kept,
+		"AWS_ACCESS_KEY_ID="+credentials.AccessKeyID,
+		"AWS_SECRET_ACCESS_KEY="+credentials.SecretAccessKey,
+	)
+	if credentials.SessionToken != "" {
+		kept = append(kept, "AWS_SESSION_TOKEN="+credentials.SessionToken)
+	}
+	return kept
+}
+
+// effectiveProfile is the profile to put on the command line. With stored keys
+// there is none: --profile outranks the environment, so a profile would
+// quietly win over the keys this connection was configured with.
+func effectiveProfile(config Config) string {
+	if config.AWSCredentials != nil {
+		return ""
+	}
+	return config.AWSProfile
+}
+
 // checkAWSCredentials asks STS who we are. It is the cheapest call that proves
-// the profile exists, its credentials are valid, and they have not expired.
-func checkAWSCredentials(profile string, region string) error {
+// the profile exists, are valid, and have not expired.
+func checkAWSCredentials(config Config) error {
 	checkContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	arguments := append([]string{"sts", "get-caller-identity"}, awsFlags(profile, region)...)
+	arguments := append(
+		[]string{"sts", "get-caller-identity"},
+		awsFlags(effectiveProfile(config), config.AWSRegion)...)
 	command := exec.CommandContext(checkContext, "aws", arguments...)
-	command.Env = os.Environ()
+	command.Env = awsEnvironment(os.Environ(), config.AWSCredentials)
 
 	output, err := command.CombinedOutput()
 	if err == nil {
@@ -140,7 +195,33 @@ func checkAWSCredentials(profile string, region string) error {
 	if errors.Is(checkContext.Err(), context.DeadlineExceeded) {
 		return fmt.Errorf("`aws sts get-caller-identity` did not answer within 15 seconds")
 	}
-	return errors.New(explainAWSFailure(profile, string(output)))
+	if config.AWSCredentials != nil {
+		return errors.New(explainStoredKeysFailure(string(output)))
+	}
+	return errors.New(explainAWSFailure(config.AWSProfile, string(output)))
+}
+
+// explainStoredKeysFailure is explainAWSFailure for a workspace that keeps its
+// own keys. The advice is different: `aws sso login` and ~/.aws are beside the
+// point when the keys came from the workspace settings.
+func explainStoredKeysFailure(output string) string {
+	lowered := strings.ToLower(output)
+
+	switch {
+	case strings.Contains(lowered, "expiredtoken"),
+		strings.Contains(lowered, "token has expired"),
+		strings.Contains(lowered, "is expired"):
+		return "the temporary AWS keys stored on this workspace have expired - " +
+			"import or paste fresh ones in the workspace setting"
+
+	case strings.Contains(lowered, "you must specify a region"):
+		return "this workspace uses stored AWS keys but has no region - " +
+			"set one in the workspace setting"
+
+	default:
+		return "AWS did not accept the keys stored on this workspace: " +
+			strings.TrimSpace(output)
+	}
 }
 
 // explainAWSFailure turns the AWS CLI's output into something that says what to

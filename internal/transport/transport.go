@@ -39,12 +39,24 @@ type Config struct {
 	Password   string
 	AWSProfile string
 	AWSRegion  string
+	// AWS Credentials is set when the workspace keeps its own keys in mssh
+	// rather than relying on the AWS CLI's configuration. nil means "let the CLI decide"
+	// which is how every connection worked before this.
+	AWSCredentials *AWSCredentials
 	// Extra carries rarely-used options as JSON, straight from the
 	// connection's extra column. Nothing here is ever queried or validated.
 	Extra string
 	// KnownHostsPath is where host keys are verified against. Empty means
 	// ~/.ssh/known_hosts.
 	KnownHostsPath string
+}
+
+// AWSCredentials is a key pair, handed to the aws process through its environment and never through its arguments
+// arguments are visible to every user on the machine throigh ps; a process's environment is not.
+type AWSCredentials struct {
+	AccessKeyID     string
+	SecretAccessKey string
+	SessionToken    string
 }
 
 type Session interface {
