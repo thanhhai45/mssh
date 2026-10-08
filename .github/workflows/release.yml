@@ -42,6 +42,12 @@ jobs:
           cd build/bin
           ditto -c -k --keepParent mssh.app mssh-${GITHUB_REF_NAME}-macos-universal.zip
 
+      - name: Disk image
+        # The same script used by hand — see docs/DMG.md.
+        run: scripts/dmg.sh build/bin/mssh-${GITHUB_REF_NAME}-macos-universal.dmg
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: build/bin/*.zip
+          files: |
+            build/bin/*.zip
+            build/bin/*.dmg
