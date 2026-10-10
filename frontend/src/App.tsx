@@ -7,6 +7,7 @@ import { SessionStatusProvider } from '@/lib/session-status-store'
 import { SettingsProvider } from '@/lib/settings-store'
 import {WorkspacesProvider} from '@/lib/workspaces-store'
 import {TabsProvider} from '@/lib/tabs-store'
+import {TransfersProvider} from '@/lib/transfers-store'
 import {router} from '@/router'
 
 function App() {
@@ -18,7 +19,10 @@ function App() {
                     <WorkspacesProvider>
                         <SessionStatusProvider>
                             <TabsProvider>
-                              <RouterProvider router={router}/>
+                                {/* Above the router: a transfer outlives the page that started it. */}
+                                <TransfersProvider>
+                                    <RouterProvider router={router}/>
+                                </TransfersProvider>
                             </TabsProvider>
                         </SessionStatusProvider>
                     </WorkspacesProvider>

@@ -1,7 +1,8 @@
 import {useEffect, useState} from 'react'
 import {useParams} from '@tanstack/react-router'
-import {Eraser, Plug, PlugZap, Plus, Search, X} from 'lucide-react'
+import {Eraser, FolderOpen, Plug, PlugZap, Plus, Search, X} from 'lucide-react'
 
+import {FilesDrawer} from '@/components/files-drawer'
 import {HostKeyDialog} from '@/components/host-key-dialog'
 import {PasswordDialog} from '@/components/password-dialog'
 import {TerminalFindBar} from '@/components/terminal-find-bar'
@@ -23,6 +24,7 @@ import {accentTextClass} from '@/lib/colors'
 import {KindIcon} from '@/components/kind-icon'
 import {useSessionStatus} from '@/lib/session-status-store'
 import {useTabs} from '@/lib/tabs-store'
+import {useTransfers} from '@/lib/transfers-store'
 import {
     attachSession,
     clearTerminal,
@@ -46,6 +48,7 @@ export function ServerTerminalPage() {
     const {workspaces, connections, loading} = useWorkspaces()
     const {stateOf, statuses} = useSessionStatus()
     const {tabsFor, activeTabOf, focusTab, openTab, closeTab, setSession} = useTabs()
+    const {transfersOf} = useTransfers()
 
     const [busy, setBusy] = useState(false)
     const [localError, setLocalError] = useState<string | null>(null)
@@ -54,6 +57,7 @@ export function ServerTerminalPage() {
     const [passwordHint, setPasswordHint] = useState<string | undefined>(undefined)
     const [askingPassword, setAskingPassword] = useState(false)
     const [finding, setFinding] = useState(false)
+    const [browsing, setBrowsing] = useState(false)
     /** A server seen for the first time, waiting for the user to trust it. */
     const [hostKey, setHostKey] = useState<{
         token: string
@@ -88,7 +92,7 @@ export function ServerTerminalPage() {
         openTab(connectionId)
     }, [connectionId, tabCount, openTab])
 
-    // ⌘F, ⌘T and ⌘W live here, not in the terminal module, because opening a
+    // ⌘F, ⌘E, ⌘T and ⌘W live here, not in the terminal module, because opening a
     // panel or a tab is React's business — a terminal has no idea either
     // exists. The keys reach this listener untouched: xterm leaves
     // ⌘-combinations alone on macOS, which is also why ⌘C and ⌘V still work
@@ -101,6 +105,11 @@ export function ServerTerminalPage() {
             if (event.metaKey && event.key === 'f') {
                 event.preventDefault()
                 setFinding(true)
+                return
+            }
+            if (event.metaKey && event.key === 'e') {
+                event.preventDefault()
+                setBrowsing((open) => !open)
                 return
             }
             if (!connectionId) return
@@ -218,6 +227,12 @@ export function ServerTerminalPage() {
     const notice = localError ?? statusMessage ?? null
     const showNotice = notice !== null && notice !== dismissed
 
+    // Shown on the Files button, so a transfer still going is visible with the
+    // drawer closed.
+    const running = activeTab?.sessionId
+        ? transfersOf(activeTab.sessionId).filter((transfer) => transfer.state === 'running').length
+        : 0
+
     return (
         <div className="flex flex-1 flex-col gap-4 duration-300 animate-in fade-in">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -245,6 +260,17 @@ export function ServerTerminalPage() {
                 {/* One child, not three: the parent uses justify-between, which
                     spaces its direct children apart. */}
                 <div className="flex items-center gap-2">
+                    <Button
+                        variant="ghost"
+                        onClick={() => setBrowsing(true)}
+                        title="Files (⌘E)"
+                    >
+                        <FolderOpen/>
+                        Files
+                        {running > 0 && (
+                            <Badge variant="secondary" className="h-4 min-w-4 px-1 tabular-nums">{running}</Badge>
+                        )}
+                    </Button>
                     <Button
                         variant="ghost"
                         onClick={() => setFinding(true)}
@@ -360,6 +386,15 @@ export function ServerTerminalPage() {
                     so each tab keeps its own scrollback. */}
                 {activeTab && <XtermView key={activeTab.id} tabId={activeTab.id}/>}
             </div>
+
+            <FilesDrawer
+                open={browsing}
+                onOpenChange={setBrowsing}
+                onClosed={() => activeTab && focusTerminal(activeTab.id)}
+                connectionName={connection.name}
+                kind={connection.kind}
+                sessionId={isConnected && activeTab?.sessionId ? activeTab.sessionId : null}
+            />
 
             {hostKey && (
                 <HostKeyDialog
