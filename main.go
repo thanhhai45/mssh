@@ -38,7 +38,7 @@ func main() {
 	moveKeychainPasswords(st, passwords)
 
 	// Create an instance of the app structure
-	app := NewApp(st, passwords, session.NewManager())
+	app := NewApp(st, passwords, session.NewManager(st))
 
 	// Create application with options
 	err = wails.Run(&options.App{

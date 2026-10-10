@@ -14,6 +14,9 @@ type fakeSession struct {
 	mutex   sync.Mutex
 	closed  bool
 	written []byte
+	// onClose, when set, runs as Close finishes — the way a real transport
+	// reports its own ending once it has been closed.
+	onClose func()
 }
 
 func (s *fakeSession) Write(payload []byte) (int, error) {
@@ -29,8 +32,14 @@ func (s *fakeSession) Resize(size transport.Size) error {
 
 func (s *fakeSession) Close() error {
 	s.mutex.Lock()
-	defer s.mutex.Unlock()
 	s.closed = true
+	onClose := s.onClose
+	s.onClose = nil
+	s.mutex.Unlock()
+
+	if onClose != nil {
+		onClose()
+	}
 	return nil
 }
 
@@ -45,6 +54,11 @@ type fakeDialer struct {
 	dialErr        error
 	exitDuringDial bool
 	opened         []*fakeSession
+	// exits holds each session's onExit, so a test can end one from the
+	// remote side, the way a dropped network or a typed `exit` would.
+	exits []func(error)
+	// exitOnClose makes each session report an ending of its own when closed.
+	exitOnClose bool
 }
 
 func (d *fakeDialer) Name() string { return "fake" }
@@ -65,6 +79,10 @@ func (d *fakeDialer) Dial(
 
 	session := &fakeSession{}
 	d.opened = append(d.opened, session)
+	d.exits = append(d.exits, onExit)
+	if d.exitOnClose {
+		session.onClose = func() { onExit(errors.New("use of closed network connection")) }
+	}
 
 	if d.exitDuringDial {
 		onExit(nil)
@@ -74,7 +92,7 @@ func (d *fakeDialer) Dial(
 }
 
 func newTestManager(dialer transport.Dialer) *Manager {
-	manager := NewManager()
+	manager := NewManager(nil)
 	manager.dialerFor = func(string) (transport.Dialer, error) { return dialer, nil }
 	return manager
 }

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"sync"
 
+	"mssh/internal/store"
 	"mssh/internal/transport"
 )
 
@@ -31,12 +32,17 @@ type Manager struct {
 	mutex     sync.RWMutex
 	sessions  map[string]*liveSession
 	dialerFor func(kind string) (transport.Dialer, error)
+	// journal hears every session open and close. Kept here rather than in
+	// app.go so that every way a session can end goes through one place.
+	journal Journal
 }
 
-func NewManager() *Manager {
+// NewManager makes a manager that reports to journal. nil records nothing.
+func NewManager(journal Journal) *Manager {
 	return &Manager{
 		sessions:  make(map[string]*liveSession),
 		dialerFor: transport.For,
+		journal:   journal,
 	}
 }
 
@@ -69,17 +75,28 @@ func (manager *Manager) Open(
 	session, err := dialer.Dial(dialContext, config, size, onOutput,
 		func(exitErr error) {
 			manager.forget(sessionID)
+			manager.recordExit(sessionID, exitErr)
 			onExit(exitErr)
 		})
 	if err != nil {
+		// Never opened, so never logged: the log is of sessions, not of
+		// attempts.
 		manager.forget(sessionID)
 		return err
 	}
+
+	// Recorded before anything can learn the session ended, so the row exists
+	// by the time an ending is written to it — whichever goroutine gets there.
+	manager.recordOpened(sessionID, connectionID)
 
 	manager.mutex.Lock()
 	live := manager.sessions[sessionID]
 	if live == nil {
 		manager.mutex.Unlock()
+		// It ended while it was opening. Its onExit ran before the row above
+		// existed and so wrote nothing; close the row here instead, or it
+		// would read as open until the next start called it interrupted.
+		manager.recordClosed(sessionID, store.SessionEnded, "ended while it was opening")
 		return session.Close()
 	}
 	live.transport = session
@@ -173,6 +190,9 @@ func (manager *Manager) Close(sessionID string) error {
 	if session == nil {
 		return nil
 	}
+	// Before Close, not after: closing makes the transport report its own
+	// ending a moment later, and the user's choice has to be the one on record.
+	manager.recordClosed(sessionID, store.SessionClosedByUser, "")
 	return session.Close()
 }
 
@@ -185,17 +205,23 @@ func (manager *Manager) CloseConnection(connectionID string) {
 	manager.mutex.Lock()
 	doomed := []transport.Session{}
 
+	doomedIDs := []string{}
+
 	for sessionID, live := range manager.sessions {
 		if live.connectionID != connectionID {
 			continue
 		}
 		if live.transport != nil {
 			doomed = append(doomed, live.transport)
+			doomedIDs = append(doomedIDs, sessionID)
 		}
 		delete(manager.sessions, sessionID)
 	}
 	manager.mutex.Unlock()
 
+	for _, sessionID := range doomedIDs {
+		manager.recordClosed(sessionID, store.SessionConnectionDeleted, "")
+	}
 	for _, session := range doomed {
 		_ = session.Close()
 	}
@@ -210,8 +236,9 @@ func (manager *Manager) CloseAll() {
 	// This runs on the way out of the application. One session refusing to
 	// close must not stop the others from being closed, and there is nobody
 	// left to tell about it either way.
-	for _, live := range open {
+	for sessionID, live := range open {
 		if live.transport != nil {
+			manager.recordClosed(sessionID, store.SessionAppQuit, "")
 			_ = live.transport.Close()
 		}
 	}
