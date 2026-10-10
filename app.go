@@ -8,6 +8,7 @@ import (
 	"mssh/internal/session"
 	"mssh/internal/store"
 	"mssh/internal/transport"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -20,11 +21,22 @@ type App struct {
 	store      *store.Store
 	secrets    secrets.Vault
 	sessions   *session.Manager
+
+	// Host keys waiting for the user to say whether to trust them, by a token
+	// the frontend holds. The key itself never crosses into JavaScript: the
+	// frontend can only answer yes, and Go records exactly what it was shown.
+	hostKeysMutex   sync.Mutex
+	pendingHostKeys map[string]*transport.UnknownHostKeyError
 }
 
 // NewApp creates a new App application struct
 func NewApp(dataStore *store.Store, vault secrets.Vault, sessions *session.Manager) *App {
-	return &App{store: dataStore, secrets: vault, sessions: sessions}
+	return &App{
+		store:           dataStore,
+		secrets:         vault,
+		sessions:        sessions,
+		pendingHostKeys: make(map[string]*transport.UnknownHostKeyError),
+	}
 }
 
 // startup is called when the app starts. The context is saved
@@ -288,6 +300,51 @@ func (app *App) ImportAWSFromShell(workspaceID string) error {
 	return err
 }
 
+// ---------- Host keys seen for the first time ----------
+
+// hostKeyQuestionMarker opens the error ConnectSession returns for a host it
+// has never seen, followed by the token for HostKeyQuestion and TrustHostKey.
+// Must match HOST_KEY_QUESTION in frontend/src/lib/api.ts.
+const hostKeyQuestionMarker = "mssh:host-key:"
+
+// askAboutHostKey parks an unknown key until the user answers, and returns
+// the token that names it. Entries are a few hundred bytes and only appear
+// when someone presses Connect, so an unanswered one is simply left behind.
+func (app *App) askAboutHostKey(unknown *transport.UnknownHostKeyError) string {
+	token := uuid.NewString()
+	app.hostKeysMutex.Lock()
+	app.pendingHostKeys[token] = unknown
+	app.hostKeysMutex.Unlock()
+	return token
+}
+
+// HostKeyQuestion returns what the trust dialog shows: the host, the key type
+// and its SHA256 fingerprint — the same line ssh prints when it asks.
+func (app *App) HostKeyQuestion(token string) (transport.HostKeyPrompt, error) {
+	app.hostKeysMutex.Lock()
+	unknown := app.pendingHostKeys[token]
+	app.hostKeysMutex.Unlock()
+
+	if unknown == nil {
+		return transport.HostKeyPrompt{}, fmt.Errorf("this host key question has expired; connect again")
+	}
+	return unknown.Prompt(), nil
+}
+
+// TrustHostKey records the key the user was shown in known_hosts — the file
+// the ssh command reads too — so the next connection goes straight through.
+func (app *App) TrustHostKey(token string) error {
+	app.hostKeysMutex.Lock()
+	unknown := app.pendingHostKeys[token]
+	delete(app.pendingHostKeys, token)
+	app.hostKeysMutex.Unlock()
+
+	if unknown == nil {
+		return fmt.Errorf("this host key question has expired; connect again")
+	}
+	return unknown.Remember()
+}
+
 /* ---------- Sessions ---------- */
 // ConnectSession opens a live connection.
 //
@@ -366,6 +423,13 @@ func (app *App) ConnectSession(
 		},
 	)
 	if err != nil {
+		var unknown *transport.UnknownHostKeyError
+		if errors.As(err, &unknown) {
+			// Not a failure to report but a question to ask, the way ssh asks
+			// yes/no. Nothing started, so the session simply never existed.
+			app.emitSessionStatus(sessionID, connectionID, "disconnected", "")
+			return "", fmt.Errorf("%s%s %w", hostKeyQuestionMarker, app.askAboutHostKey(unknown), err)
+		}
 		app.emitSessionStatus(sessionID, connectionID, "error", err.Error())
 		return "", err
 	}

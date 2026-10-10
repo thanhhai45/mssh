@@ -135,5 +135,11 @@ func dialAndHandshake(
 		}
 	}
 
+	// A host the user has not trusted yet is a question for them, not a failure
+	// to explain: hand it up as it is, so the app can recognise it and ask.
+	var unknown *UnknownHostKeyError
+	if errors.As(lastErr, &unknown) {
+		return nil, nil, nil, unknown
+	}
 	return nil, nil, nil, errors.New(explainHandshakeFailure(address, lastErr))
 }

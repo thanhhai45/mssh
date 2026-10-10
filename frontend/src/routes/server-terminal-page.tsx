@@ -2,6 +2,7 @@ import {useEffect, useState} from 'react'
 import {useParams} from '@tanstack/react-router'
 import {Eraser, Plug, PlugZap, Plus, Search, X} from 'lucide-react'
 
+import {HostKeyDialog} from '@/components/host-key-dialog'
 import {PasswordDialog} from '@/components/password-dialog'
 import {TerminalFindBar} from '@/components/terminal-find-bar'
 import {XtermView} from '@/components/xterm-view'
@@ -11,9 +12,11 @@ import {
     api,
     describeConnection,
     errorMessage,
+    hostKeyQuestionOf,
     kindMeta,
     needsPassword,
     sessionDotClass,
+    type HostKeyPrompt,
     type SessionState,
 } from '@/lib/api'
 import {accentTextClass} from '@/lib/colors'
@@ -51,6 +54,13 @@ export function ServerTerminalPage() {
     const [passwordHint, setPasswordHint] = useState<string | undefined>(undefined)
     const [askingPassword, setAskingPassword] = useState(false)
     const [finding, setFinding] = useState(false)
+    /** A server seen for the first time, waiting for the user to trust it. */
+    const [hostKey, setHostKey] = useState<{
+        token: string
+        prompt: HostKeyPrompt
+        /** What connect was called with, so trusting can carry on from there. */
+        password: string
+    } | null>(null)
 
     const workspace = workspaces.find((candidate) => candidate.id === workspaceId)
     const connection = (connections[workspaceId ?? ''] ?? []).find(
@@ -135,6 +145,19 @@ export function ServerTerminalPage() {
             setAskingPassword(false)
             setPasswordHint(undefined)
         } catch (err) {
+            const question = hostKeyQuestionOf(err)
+            if (question) {
+                // Not a failure either: a server this machine has never seen.
+                // Ask, the way ssh asks yes/no, before anything else — the host
+                // key is checked before the password is ever sent.
+                try {
+                    const prompt = await api.hostKeyQuestion(question)
+                    setHostKey({token: question, prompt, password})
+                } catch (questionErr) {
+                    setLocalError(errorMessage(questionErr))
+                }
+                return
+            }
             if (needsPassword(err)) {
                 // Not a failure: Go is telling us to go and ask.
                 setPasswordHint(undefined)
@@ -337,6 +360,19 @@ export function ServerTerminalPage() {
                     so each tab keeps its own scrollback. */}
                 {activeTab && <XtermView key={activeTab.id} tabId={activeTab.id}/>}
             </div>
+
+            {hostKey && (
+                <HostKeyDialog
+                    prompt={hostKey.prompt}
+                    onTrust={async () => {
+                        await api.trustHostKey(hostKey.token)
+                        const password = hostKey.password
+                        setHostKey(null)
+                        await connect(password)
+                    }}
+                    onCancel={() => setHostKey(null)}
+                />
+            )}
 
             {askingPassword && (
                 <PasswordDialog

@@ -103,11 +103,17 @@ func hostKeyCallbackFor(knownHostsPath string) (ssh.HostKeyCallback, error) {
 		knownHostsPath = filepath.Join(homeDirectory, ".ssh", "known_hosts")
 	}
 
-	verify, err := knownhosts.New(knownHostsPath)
+	// A machine that has never run ssh has no known_hosts at all. That is an
+	// empty list, not an error: every host is simply unknown, and asking about
+	// the first one is what creates the file.
+	files := []string{knownHostsPath}
+	if _, err := os.Stat(knownHostsPath); errors.Is(err, os.ErrNotExist) {
+		files = nil
+	}
+
+	verify, err := knownhosts.New(files...)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"read %s: %w - connect once with the ssh command first so the host "+
-				"key gets recorded", knownHostsPath, err)
+		return nil, fmt.Errorf("read %s: %w", knownHostsPath, err)
 	}
 
 	// knownhosts reports "unknown host" and "the key changed" as the same kind
@@ -130,11 +136,14 @@ func hostKeyCallbackFor(knownHostsPath string) (ssh.HostKeyCallback, error) {
 		}
 
 		if len(keyError.Want) == 0 {
-			return fmt.Errorf(
-				"%s has never been connected to from this machine. Run "+
-					"`ssh %s` once, check the fingerprint it shows, and accept "+
-					"it — that records the key in %s, which mssh reads too",
-				displayHost, displayHost, knownHostsPath)
+			// Not an advice string any more: "run ssh once" cannot work for an
+			// ssm-ssh instance, which has no address outside the tunnel. The
+			// key travels up instead, so the app can ask, as ssh itself does.
+			return &UnknownHostKeyError{
+				Host:           knownhosts.Normalize(hostname),
+				Key:            key,
+				KnownHostsPath: knownHostsPath,
+			}
 		}
 
 		return fmt.Errorf(

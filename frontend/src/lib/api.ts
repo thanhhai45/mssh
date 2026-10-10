@@ -13,6 +13,7 @@ export type ParsedSSHCommand = store.ParsedSSHCommand;
 export type ResolvedAWS = store.ResolvedAWS;
 export type SessionInfo = Omit<session.Info, 'sessionId'> & {sessionId: SessionId};
 export type AWSShellPreview = transport.AWSShellPreview;
+export type HostKeyPrompt = transport.HostKeyPrompt;
 /** Where a workspace's AWS credentials come from. Must match store.AWSCredentials* in Go. */
 export type AWSCredentialsSource = 'cli' | 'stored';
 
@@ -37,6 +38,13 @@ export type SessionStatus = {
 * than compared inline in three components.
 */
 export const PASSWORD_REQUIRED = 'password required';
+
+/**
+ * Must match hostKeyQuestionMarker in app.go. ConnectSession fails with this,
+ * followed by a token, when the server is one this machine has never seen:
+ * not an error to show, but a question to ask, the way ssh asks yes/no.
+ */
+export const HOST_KEY_QUESTION = 'mssh:host-key:';
 
 export const CONNECTION_KINDS: ConnectionKind[] = ['ssh', 'ssm', 'ssm-ssh', 'ssh-config'];
 export const AUTH_METHODS: AuthMethod[] = ['agent', 'key', 'password'];
@@ -151,6 +159,14 @@ export function needsPassword(err: unknown): boolean {
   return errorMessage(err).includes(PASSWORD_REQUIRED)
 }
 
+/** The token of an unknown host key the user should be asked about, or null. */
+export function hostKeyQuestionOf(err: unknown): string | null {
+  const message = errorMessage(err)
+  const start = message.indexOf(HOST_KEY_QUESTION)
+  if (start < 0) return null
+  return message.slice(start + HOST_KEY_QUESTION.length).split(' ')[0] || null
+}
+
 /* ---------------- Calls ---------------- */
 
 export const api = {
@@ -177,6 +193,10 @@ export const api = {
   clearWorkspaceAWSSecret: (workspaceId: string): Promise<void> => App.ClearWorkspaceAWSSecret(workspaceId),
   previewAWSFromShell: (): Promise<AWSShellPreview> => App.PreviewAWSFromShell(),
   importAWSFromShell: (workspaceId: string): Promise<void> => App.ImportAWSFromShell(workspaceId),
+
+  /** What to show before trusting a host: never the key, only its fingerprint. */
+  hostKeyQuestion: (token: string): Promise<HostKeyPrompt> => App.HostKeyQuestion(token),
+  trustHostKey: (token: string): Promise<void> => App.TrustHostKey(token),
 
   setConnectionPassword: (id: string, password: string): Promise<void> => App.SetConnectionPassword(id, password),
   deleteConnectionPassword: (id: string): Promise<void> => App.DeleteConnectionPassword(id),

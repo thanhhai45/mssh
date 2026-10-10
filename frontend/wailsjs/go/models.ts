@@ -204,6 +204,24 @@ export namespace transport {
 	        this.profile = source["profile"];
 	    }
 	}
+	export class HostKeyPrompt {
+	    host: string;
+	    keyType: string;
+	    fingerprint: string;
+	    knownHostsPath: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new HostKeyPrompt(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.keyType = source["keyType"];
+	        this.fingerprint = source["fingerprint"];
+	        this.knownHostsPath = source["knownHostsPath"];
+	    }
+	}
 
 }
 

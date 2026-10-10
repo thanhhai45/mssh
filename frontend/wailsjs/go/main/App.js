@@ -62,6 +62,10 @@ export function HasWorkspaceAWSSecret(arg1) {
   return window['go']['main']['App']['HasWorkspaceAWSSecret'](arg1);
 }
 
+export function HostKeyQuestion(arg1) {
+  return window['go']['main']['App']['HostKeyQuestion'](arg1);
+}
+
 export function ImportAWSFromShell(arg1) {
   return window['go']['main']['App']['ImportAWSFromShell'](arg1);
 }
@@ -112,6 +116,10 @@ export function SetSetting(arg1, arg2) {
 
 export function SetWorkspaceAWSSecret(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetWorkspaceAWSSecret'](arg1, arg2, arg3);
+}
+
+export function TrustHostKey(arg1) {
+  return window['go']['main']['App']['TrustHostKey'](arg1);
 }
 
 export function UpdateConnection(arg1, arg2) {
