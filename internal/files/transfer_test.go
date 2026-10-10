@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // recorder keeps every report a Transfers makes, and can act on one as it
@@ -228,5 +229,117 @@ func TestListShowsEveryTransferNewestFirst(t *testing.T) {
 	listed := transfers.List()
 	if len(listed) != 1 || listed[0].ID != first.ID || listed[0].State != TransferDone {
 		t.Errorf("List = %+v", listed)
+	}
+}
+
+// holdAtFirstProgress stops the first transfer of each named session at its
+// first progress report, until release is closed, so a test can act while
+// those transfers are certainly partway through. reached receives each
+// session's id as it is held.
+func holdAtFirstProgress(events *recorder, sessions ...string) (reached chan string, release chan struct{}) {
+	reached = make(chan string, len(sessions))
+	release = make(chan struct{})
+	var mutex sync.Mutex
+	waiting := map[string]bool{}
+	for _, session := range sessions {
+		waiting[session] = true
+	}
+	events.onEvent = func(info Transfer) {
+		if info.State != TransferRunning || info.Done == 0 {
+			return
+		}
+		mutex.Lock()
+		hold := waiting[info.SessionID]
+		delete(waiting, info.SessionID)
+		mutex.Unlock()
+		if hold {
+			reached <- info.SessionID
+			<-release
+		}
+	}
+	return reached, release
+}
+
+func stateOf(transfers *Transfers, id string) string {
+	for _, info := range transfers.List() {
+		if info.ID == id {
+			return info.State
+		}
+	}
+	return ""
+}
+
+// Closing one tab must not stop what another tab is moving. Both transfers are
+// held partway, so a CancelSession that matched too much would catch the other.
+func TestCancelSessionStopsOnlyThatSession(t *testing.T) {
+	remote, local := t.TempDir(), t.TempDir()
+	for _, name := range []string{"one.bin", "two.bin"} {
+		if err := os.WriteFile(filepath.Join(remote, name), randomBytes(t, 8*1024*1024), 0o644); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	client := testServer(t, remote)
+	transfers, events := newTransfers()
+	// s1 is held, so its cleanup cannot finish while CancelSession waits: this
+	// also checks that the wait gives up instead of hanging.
+	transfers.cleanupWait = 50 * time.Millisecond
+	reached, release := holdAtFirstProgress(events, "s1", "s2")
+
+	one := transfers.Download(client, "s1", filepath.ToSlash(filepath.Join(remote, "one.bin")), filepath.Join(local, "one.bin"))
+	two := transfers.Download(client, "s2", filepath.ToSlash(filepath.Join(remote, "two.bin")), filepath.Join(local, "two.bin"))
+	<-reached
+	<-reached
+
+	began := time.Now()
+	transfers.CancelSession("s1")
+	if waited := time.Since(began); waited > 2*time.Second {
+		t.Errorf("CancelSession waited %v on a transfer that could not finish", waited)
+	}
+	close(release)
+	transfers.Wait()
+
+	if state := stateOf(transfers, one.ID); state != TransferCancelled {
+		t.Errorf("s1's transfer: state %q, want cancelled", state)
+	}
+	if state := stateOf(transfers, two.ID); state != TransferDone {
+		t.Errorf("s2's transfer: state %q, want done", state)
+	}
+	if _, err := os.Stat(filepath.Join(local, "one.bin")); !os.IsNotExist(err) {
+		t.Errorf("the cancelled download exists under its real name (err %v)", err)
+	}
+}
+
+// Cancelling returns only once the cleanup is done - checked straight after,
+// without Wait - because the caller closes the session next, and after that
+// the server cannot be reached to remove the partial upload.
+func TestCancelWaitsForTheCleanup(t *testing.T) {
+	remote, local := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(remote, "big.bin"), []byte("previous version"), 0o644); err != nil {
+		t.Fatalf("seed remote: %v", err)
+	}
+	source := filepath.Join(local, "big.bin")
+	if err := os.WriteFile(source, randomBytes(t, 8*1024*1024), 0o644); err != nil {
+		t.Fatalf("seed local: %v", err)
+	}
+	client := testServer(t, remote)
+	transfers, events := newTransfers()
+	reached, release := holdAtFirstProgress(events, "s1")
+
+	started := transfers.Upload(client, "s1", source, filepath.ToSlash(remote))
+	<-reached
+	// CancelSession in two steps, so the transfer is released only after it
+	// has been cancelled: the wait then has real cleanup to wait for.
+	waiting := transfers.cancelWhere(func(info Transfer) bool { return info.SessionID == "s1" })
+	close(release)
+	transfers.wait(waiting)
+
+	if state := stateOf(transfers, started.ID); state != TransferCancelled {
+		t.Errorf("state %q, want cancelled", state)
+	}
+	if found := leftovers(t, remote); len(found) != 0 {
+		t.Errorf("cancel returned before the cleanup: %v still on the server", found)
+	}
+	if got, _ := os.ReadFile(filepath.Join(remote, "big.bin")); string(got) != "previous version" {
+		t.Errorf("the server's file was changed by a cancelled upload")
 	}
 }

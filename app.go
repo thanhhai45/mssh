@@ -4,16 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"mssh/internal/files"
 	"mssh/internal/secrets"
 	"mssh/internal/session"
 	"mssh/internal/store"
 	"mssh/internal/transport"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pkg/sftp"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -30,16 +34,22 @@ type App struct {
 	// frontend can only answer yes, and Go records exactly what it was shown.
 	hostKeysMutex   sync.Mutex
 	pendingHostKeys map[string]*transport.UnknownHostKeyError
+
+	// File transfers live here rather than in a page, so they keep going while
+	// the user moves around the app.
+	transfers *files.Transfers
 }
 
 // NewApp creates a new App application struct
 func NewApp(dataStore *store.Store, vault secrets.Vault, sessions *session.Manager) *App {
-	return &App{
+	app := &App{
 		store:           dataStore,
 		secrets:         vault,
 		sessions:        sessions,
 		pendingHostKeys: make(map[string]*transport.UnknownHostKeyError),
 	}
+	app.transfers = files.NewTransfers(app.emitTransfer)
+	return app
 }
 
 // startup is called when the app starts. The context is saved
@@ -55,6 +65,8 @@ func (app *App) startup(startupContext context.Context) {
 // shutdown runs before wails.Run returns, and so before main's deferred
 // st.Close: CloseAll can still write "app-quit" for every open session.
 func (app *App) shutdown(shutdownContext context.Context) {
+	// Transfers first: removing a partial upload needs its session still open.
+	app.transfers.CancelAll()
 	app.sessions.CloseAll()
 }
 
@@ -87,6 +99,7 @@ func (app *App) DeleteWorkspace(id string) error {
 
 	for _, c := range conns {
 		// Every tab of every machine in here is about to point at nothing.
+		app.stopTransfersOfConnection(c.ID)
 		app.sessions.CloseConnection(c.ID)
 	}
 	return nil
@@ -125,6 +138,7 @@ func (app *App) DeleteConnection(id string) error {
 	}
 	// Closes a gap that predates multi-tab: the session used to keep running
 	// with nothing in the UI able to reach it.
+	app.stopTransfersOfConnection(id)
 	app.sessions.CloseConnection(id)
 	return nil
 }
@@ -460,6 +474,8 @@ func (app *App) DisconnectSession(sessionID string) error {
 	// Ask before closing. Close forgets the session, and then there is
 	// nothing left to ask
 	connectionID := app.sessions.ConnectionOf(sessionID)
+	// Before Close, so a cancelled upload can still remove its partial file.
+	app.transfers.CancelSession(sessionID)
 	if err := app.sessions.Close(sessionID); err != nil {
 		return err
 	}
@@ -493,6 +509,113 @@ func (app *App) emitSessionStatus(
 // the UI can warn before the user configures one.
 func (app *App) CheckSSMTools() error {
 	return transport.CheckSSMTools()
+}
+
+// ---------- Files (SFTP) ----------
+
+// errFilesNotWired is what file browsing answers until the session manager can
+// hand out an SFTP client.
+var errFilesNotWired = errors.New("browsing files is not available yet")
+
+// sftpClient returns the SFTP client of an open session.
+//
+// TODO(SFTP round 1): return the session manager's client for sessionID.
+func (app *App) sftpClient(sessionID string) (*sftp.Client, error) {
+	return nil, errFilesNotWired
+}
+
+// ListRemoteDirectory lists one directory on a session's machine. An empty dir
+// is the directory the session logs in to.
+func (app *App) ListRemoteDirectory(sessionID string, dir string) (files.Listing, error) {
+	client, err := app.sftpClient(sessionID)
+	if err != nil {
+		return files.Listing{}, err
+	}
+	return files.List(client, dir)
+}
+
+// DownloadFile asks where to save a remote file, then starts copying it there.
+// It returns the transfer at once, or one with an empty id when the user
+// cancelled the dialog - not an error. Progress arrives as "transfer:changed".
+func (app *App) DownloadFile(sessionID string, remotePath string) (files.Transfer, error) {
+	// Before the dialog: a session that cannot transfer should say so before
+	// the user has chosen where to put the file.
+	client, err := app.sftpClient(sessionID)
+	if err != nil {
+		return files.Transfer{}, err
+	}
+
+	localPath, err := runtime.SaveFileDialog(app.appContext, runtime.SaveDialogOptions{
+		Title:            "Download " + path.Base(remotePath),
+		DefaultDirectory: downloadsDirectory(),
+		DefaultFilename:  path.Base(remotePath),
+	})
+	if err != nil || localPath == "" {
+		return files.Transfer{}, err
+	}
+	return app.transfers.Download(client, sessionID, remotePath, localPath), nil
+}
+
+// UploadFiles asks which local files to send, then starts copying each into
+// remoteDir, replacing a file of the same name. It returns the transfers it
+// started: none when the user cancelled the dialog.
+//
+// The files are picked in a native dialog here rather than named by the page:
+// the frontend can ask for an upload, but never point at a local path itself.
+func (app *App) UploadFiles(sessionID string, remoteDir string) ([]files.Transfer, error) {
+	client, err := app.sftpClient(sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	localPaths, err := runtime.OpenMultipleFilesDialog(app.appContext, runtime.OpenDialogOptions{
+		Title: "Upload to " + remoteDir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	started := []files.Transfer{}
+	for _, localPath := range localPaths {
+		started = append(started, app.transfers.Upload(client, sessionID, localPath, remoteDir))
+	}
+	return started, nil
+}
+
+// CancelTransfer stops one transfer. Whatever it had written is removed.
+func (app *App) CancelTransfer(id string) {
+	app.transfers.Cancel(id)
+}
+
+// ListTransfers returns every transfer of this run, newest first, so the
+// frontend can rebuild its list after a reload.
+func (app *App) ListTransfers() []files.Transfer {
+	return app.transfers.List()
+}
+
+// emitTransfer sends each change of a transfer to the frontend. One event for
+// all of them: the frontend keeps one list, whichever tab started what.
+func (app *App) emitTransfer(transfer files.Transfer) {
+	runtime.EventsEmit(app.appContext, "transfer:changed", transfer)
+}
+
+// stopTransfersOfConnection cancels the transfers of every open session of one
+// connection, before CloseConnection takes those sessions away.
+func (app *App) stopTransfersOfConnection(connectionID string) {
+	for _, open := range app.sessions.OpenSessions() {
+		if open.ConnectionID == connectionID {
+			app.transfers.CancelSession(open.SessionID)
+		}
+	}
+}
+
+// downloadsDirectory is where the save dialog opens: ~/Downloads, or wherever
+// the dialog likes if there is no home directory to find.
+func downloadsDirectory() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Downloads")
 }
 
 // ---------- Session log ----------

@@ -49,6 +49,8 @@ type job struct {
 	info       Transfer
 	cancel     context.CancelFunc
 	lastReport time.Time
+	// done is closed once the transfer has finished and cleaned up after itself.
+	done chan struct{}
 }
 
 // Transfers runs file transfers in the background and reports each change.
@@ -64,6 +66,10 @@ type Transfers struct {
 	// interval spaces out progress reports. A large file read in 32 KB pieces
 	// would otherwise send tens of thousands of events.
 	interval time.Duration
+	// cleanupWait bounds how long cancelling waits. Removing a partial upload
+	// needs the server, and on a dead connection that call does not return
+	// until the session is closed - which is what the caller is waiting to do.
+	cleanupWait time.Duration
 }
 
 // NewTransfers makes a registry that calls onChange with a copy of a transfer
@@ -71,9 +77,10 @@ type Transfers struct {
 // runs on the transfer's own goroutine.
 func NewTransfers(onChange func(Transfer)) *Transfers {
 	return &Transfers{
-		jobs:     make(map[string]*job),
-		onChange: onChange,
-		interval: 100 * time.Millisecond,
+		jobs:        make(map[string]*job),
+		onChange:    onChange,
+		interval:    100 * time.Millisecond,
+		cleanupWait: 5 * time.Second,
 	}
 }
 
@@ -117,8 +124,9 @@ func (transfers *Transfers) start(
 		StartedAt:   time.Now().Unix(),
 	}
 
+	finished := make(chan struct{})
 	transfers.mutex.Lock()
-	transfers.jobs[info.ID] = &job{info: info, cancel: cancel}
+	transfers.jobs[info.ID] = &job{info: info, cancel: cancel, done: finished}
 	transfers.mutex.Unlock()
 	transfers.notify(info)
 
@@ -133,6 +141,7 @@ func (transfers *Transfers) start(
 		// Cancelled only if it stopped because of it: a cancel that arrives
 		// after the last byte changes nothing, and the file is in place.
 		transfers.finish(info.ID, err, err != nil && ctx.Err() != nil)
+		close(finished)
 	}()
 	return info
 }
@@ -200,15 +209,47 @@ func (transfers *Transfers) Cancel(id string) {
 	}
 }
 
-// CancelAll stops every transfer and waits for each to clean up after itself.
-// Run before the sessions close, so the cleanup can still reach the server.
+// CancelSession stops the transfers of one session and waits for them to clean
+// up after themselves. Run before that session closes, so the cleanup can still
+// reach the server. It waits at most cleanupWait.
+func (transfers *Transfers) CancelSession(sessionID string) {
+	transfers.wait(transfers.cancelWhere(func(info Transfer) bool {
+		return info.SessionID == sessionID
+	}))
+}
+
+// CancelAll is CancelSession for every session, on the way out of the app.
 func (transfers *Transfers) CancelAll() {
+	transfers.wait(transfers.cancelWhere(func(Transfer) bool { return true }))
+}
+
+// cancelWhere cancels the matching transfers and returns what to wait on. A
+// finished transfer's channel is already closed, so waiting on it costs nothing.
+func (transfers *Transfers) cancelWhere(matches func(Transfer) bool) []chan struct{} {
 	transfers.mutex.Lock()
+	defer transfers.mutex.Unlock()
+
+	var waiting []chan struct{}
 	for _, current := range transfers.jobs {
-		current.cancel()
+		if matches(current.info) {
+			current.cancel()
+			waiting = append(waiting, current.done)
+		}
 	}
-	transfers.mutex.Unlock()
-	transfers.running.Wait()
+	return waiting
+}
+
+// wait blocks until every channel is closed, or until cleanupWait has passed.
+func (transfers *Transfers) wait(waiting []chan struct{}) {
+	deadline := time.NewTimer(transfers.cleanupWait)
+	defer deadline.Stop()
+	for _, done := range waiting {
+		select {
+		case <-done:
+		case <-deadline.C:
+			return
+		}
+	}
 }
 
 // Wait blocks until no transfer is running.

@@ -1,6 +1,6 @@
 import * as App from '../../wailsjs/go/main/App';
 import {EventsOn} from '../../wailsjs/runtime/runtime';
-import type {session, store, transport} from '../../wailsjs/go/models';
+import type {files, session, store, transport} from '../../wailsjs/go/models';
 import {asSessionId, type SessionId} from './ids';
 
 /* ---------------- Types ---------------- */
@@ -16,6 +16,14 @@ export type AWSShellPreview = transport.AWSShellPreview;
 export type HostKeyPrompt = transport.HostKeyPrompt;
 export type SessionLogEntry = store.SessionLogEntry;
 export type SessionLogFilter = store.SessionLogFilter;
+export type RemoteListing = files.Listing;
+export type RemoteEntry = files.Entry;
+export type TransferState = 'running' | 'done' | 'failed' | 'cancelled';
+export type Transfer = Omit<files.Transfer, 'sessionId' | 'direction' | 'state'> & {
+  sessionId: SessionId;
+  direction: 'download' | 'upload';
+  state: TransferState;
+};
 /** Where a workspace's AWS credentials come from. Must match store.AWSCredentials* in Go. */
 export type AWSCredentialsSource = 'cli' | 'stored';
 
@@ -227,6 +235,22 @@ export const api = {
   openSessions: (): Promise<SessionInfo[]> => App.OpenSessions() as Promise<SessionInfo[]>,
   checkSSMTools: (): Promise<void> => App.CheckSSMTools(),
 
+  /** One directory on a session's machine. '' is where the session logs in. */
+  listRemoteDirectory: (sessionId: SessionId, dir: string): Promise<RemoteListing> =>
+    App.ListRemoteDirectory(sessionId, dir),
+  /**
+   * Asks where to save, then starts the download in Go. Resolves to the
+   * transfer, or null when the user cancelled the dialog.
+   */
+  downloadFile: (sessionId: SessionId, remotePath: string): Promise<Transfer | null> =>
+    App.DownloadFile(sessionId, remotePath).then((transfer) => (transfer.id ? (transfer as Transfer) : null)),
+  /** Asks which files to send, then starts one upload each. [] when cancelled. */
+  uploadFiles: (sessionId: SessionId, remoteDir: string): Promise<Transfer[]> =>
+    App.UploadFiles(sessionId, remoteDir) as Promise<Transfer[]>,
+  cancelTransfer: (id: string): Promise<void> => App.CancelTransfer(id),
+  /** Every transfer of this run, newest first: to rebuild the list after a reload. */
+  listTransfers: (): Promise<Transfer[]> => App.ListTransfers() as Promise<Transfer[]>,
+
   getAllSettings: ():Promise<Record<string, string>> => App.GetAllSettings(),
   setSetting: (key: string, value: string): Promise<void> => App.SetSetting(key, value),
   deleteSetting: (key: string): Promise<void> => App.DeleteSetting(key)
@@ -245,6 +269,14 @@ export function onSessionOutput(sessionId: SessionId, handler: (chunk: string) =
 /** Subscribes to status changes for every session. Returns the unsubscribe function. */
 export function onSessionStatus(handler: (status: SessionStatus) => void): () => void {
   return EventsOn('session:status', handler);
+}
+
+/**
+ * Subscribes to every change of every transfer: started, moved on, finished.
+ * Progress comes at most every 100 ms per transfer. Returns the unsubscribe function.
+ */
+export function onTransferChanged(handler: (transfer: Transfer) => void): () => void {
+  return EventsOn('transfer:changed', handler);
 }
 
 /** Wails rejects with a bare string, not an Error. Normalise it for the UI. */
