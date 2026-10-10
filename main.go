@@ -37,6 +37,15 @@ func main() {
 	// here once after that the keychain is never read again.
 	moveKeychainPasswords(st, passwords)
 
+	// Sessions the last run never got to close — a crash, a force quit, the
+	// battery running out — are settled before any new one can open, so the
+	// log never shows a session as still open when it cannot be.
+	if settled, err := st.MarkInterruptedSessions(); err != nil {
+		log.Printf("mssh: session log: %v", err)
+	} else if settled > 0 {
+		log.Printf("mssh: session log: %d session(s) from the last run marked interrupted", settled)
+	}
+
 	// Create an instance of the app structure
 	app := NewApp(st, passwords, session.NewManager(st))
 

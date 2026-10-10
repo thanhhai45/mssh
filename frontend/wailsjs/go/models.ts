@@ -127,6 +127,68 @@ export namespace store {
 	        this.region = source["region"];
 	    }
 	}
+	export class SessionLogEntry {
+	    id: string;
+	    connectionId: string;
+	    workspaceId: string;
+	    connectionName: string;
+	    workspaceName: string;
+	    kind: string;
+	    target: string;
+	    username: string;
+	    awsProfile: string;
+	    awsRegion: string;
+	    awsCredentialsSource: string;
+	    openedAt: number;
+	    closedAt: number;
+	    endReason: string;
+	    endMessage: string;
+	    reconnectOf: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionLogEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.connectionId = source["connectionId"];
+	        this.workspaceId = source["workspaceId"];
+	        this.connectionName = source["connectionName"];
+	        this.workspaceName = source["workspaceName"];
+	        this.kind = source["kind"];
+	        this.target = source["target"];
+	        this.username = source["username"];
+	        this.awsProfile = source["awsProfile"];
+	        this.awsRegion = source["awsRegion"];
+	        this.awsCredentialsSource = source["awsCredentialsSource"];
+	        this.openedAt = source["openedAt"];
+	        this.closedAt = source["closedAt"];
+	        this.endReason = source["endReason"];
+	        this.endMessage = source["endMessage"];
+	        this.reconnectOf = source["reconnectOf"];
+	    }
+	}
+	export class SessionLogFilter {
+	    workspaceId: string;
+	    connectionId: string;
+	    from: number;
+	    to: number;
+	    limit: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionLogFilter(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.workspaceId = source["workspaceId"];
+	        this.connectionId = source["connectionId"];
+	        this.from = source["from"];
+	        this.to = source["to"];
+	        this.limit = source["limit"];
+	    }
+	}
 	export class Workspace {
 	    id: string;
 	    name: string;

@@ -40,6 +40,8 @@ export function ImportAWSFromShell(arg1:string):Promise<void>;
 
 export function ListConnections(arg1:string):Promise<Array<store.Connection>>;
 
+export function ListSessionLog(arg1:store.SessionLogFilter):Promise<Array<store.SessionLogEntry>>;
+
 export function ListWorkspaces():Promise<Array<store.Workspace>>;
 
 export function MoveConnection(arg1:string,arg2:string):Promise<void>;

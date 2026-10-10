@@ -48,6 +48,9 @@ func (app *App) startup(startupContext context.Context) {
 	// background, rather than when somebody is waiting for a connection.
 	transport.WarmShellEnvironment()
 }
+
+// shutdown runs before wails.Run returns, and so before main's deferred
+// st.Close: CloseAll can still write "app-quit" for every open session.
 func (app *App) shutdown(shutdownContext context.Context) {
 	app.sessions.CloseAll()
 }
@@ -487,6 +490,14 @@ func (app *App) emitSessionStatus(
 // the UI can warn before the user configures one.
 func (app *App) CheckSSMTools() error {
 	return transport.CheckSSMTools()
+}
+
+// ---------- Session log ----------
+
+// ListSessionLog returns the session log, newest first, narrowed by filter.
+// Zero values in the filter mean "any".
+func (app *App) ListSessionLog(filter store.SessionLogFilter) ([]store.SessionLogEntry, error) {
+	return app.store.ListSessionLog(filter)
 }
 
 /*------------------ Settings ----------------------------------*/

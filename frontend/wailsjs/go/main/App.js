@@ -74,6 +74,10 @@ export function ListConnections(arg1) {
   return window['go']['main']['App']['ListConnections'](arg1);
 }
 
+export function ListSessionLog(arg1) {
+  return window['go']['main']['App']['ListSessionLog'](arg1);
+}
+
 export function ListWorkspaces() {
   return window['go']['main']['App']['ListWorkspaces']();
 }

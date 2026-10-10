@@ -14,6 +14,8 @@ export type ResolvedAWS = store.ResolvedAWS;
 export type SessionInfo = Omit<session.Info, 'sessionId'> & {sessionId: SessionId};
 export type AWSShellPreview = transport.AWSShellPreview;
 export type HostKeyPrompt = transport.HostKeyPrompt;
+export type SessionLogEntry = store.SessionLogEntry;
+export type SessionLogFilter = store.SessionLogFilter;
 /** Where a workspace's AWS credentials come from. Must match store.AWSCredentials* in Go. */
 export type AWSCredentialsSource = 'cli' | 'stored';
 
@@ -196,6 +198,10 @@ export const api = {
 
   /** What to show before trusting a host: never the key, only its fingerprint. */
   hostKeyQuestion: (token: string): Promise<HostKeyPrompt> => App.HostKeyQuestion(token),
+
+  /** The session log, newest first. Anything left out of the filter means "any". */
+  listSessionLog: (filter: Partial<SessionLogFilter> = {}): Promise<SessionLogEntry[]> =>
+    App.ListSessionLog({workspaceId: '', connectionId: '', from: 0, to: 0, limit: 0, ...filter}),
   trustHostKey: (token: string): Promise<void> => App.TrustHostKey(token),
 
   setConnectionPassword: (id: string, password: string): Promise<void> => App.SetConnectionPassword(id, password),
