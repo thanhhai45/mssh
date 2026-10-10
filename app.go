@@ -513,15 +513,10 @@ func (app *App) CheckSSMTools() error {
 
 // ---------- Files (SFTP) ----------
 
-// errFilesNotWired is what file browsing answers until the session manager can
-// hand out an SFTP client.
-var errFilesNotWired = errors.New("browsing files is not available yet")
-
-// sftpClient returns the SFTP client of an open session.
-//
-// TODO(SFTP round 1): return the session manager's client for sessionID.
+// sftpClient returns the SFTP client of an open session. Every file binding
+// goes through here.
 func (app *App) sftpClient(sessionID string) (*sftp.Client, error) {
-	return nil, errFilesNotWired
+	return app.sessions.SFTP(sessionID)
 }
 
 // ListRemoteDirectory lists one directory on a session's machine. An empty dir

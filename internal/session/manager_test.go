@@ -3,8 +3,11 @@ package session
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
+
+	"github.com/pkg/sftp"
 
 	"mssh/internal/transport"
 )
@@ -240,5 +243,57 @@ func TestCloseAll(t *testing.T) {
 		if !session.isClosed() {
 			t.Errorf("session %d was not closed", index)
 		}
+	}
+}
+
+/* ---------------- files ---------------- */
+
+// fakeBrowser is a session that can move files, the way ssh and ssm-ssh can.
+type fakeBrowser struct {
+	fakeSession
+	calls int
+	err   error
+}
+
+func (s *fakeBrowser) SFTP() (*sftp.Client, error) {
+	s.calls++
+	return nil, s.err
+}
+
+func TestSFTPOfASessionThatIsNotOpen(t *testing.T) {
+	manager := newTestManager(&fakeDialer{})
+
+	_, err := manager.SFTP("missing")
+	if err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Errorf("SFTP(missing) = %v, want an error naming the session", err)
+	}
+}
+
+// An ssm or ssh-config session runs a program and has no files to offer.
+func TestSFTPOfASessionWithoutFiles(t *testing.T) {
+	manager := newTestManager(&fakeDialer{})
+	open(t, manager, "session1", "connect1")
+
+	if _, err := manager.SFTP("session1"); !errors.Is(err, transport.ErrNoFileBrowsing) {
+		t.Errorf("SFTP = %v, want ErrNoFileBrowsing", err)
+	}
+}
+
+// The manager asks the session each time; sharing one client is the
+// session's job, not something the manager caches on top.
+func TestSFTPAsksTheSession(t *testing.T) {
+	manager := newTestManager(&fakeDialer{})
+	open(t, manager, "session1", "connect1")
+	refused := errors.New("subsystem request failed")
+	browser := &fakeBrowser{err: refused}
+	manager.sessions["session1"].transport = browser
+
+	for range 2 {
+		if _, err := manager.SFTP("session1"); !errors.Is(err, refused) {
+			t.Errorf("SFTP = %v, want the session's own error", err)
+		}
+	}
+	if browser.calls != 2 {
+		t.Errorf("the session was asked %d times, want 2", browser.calls)
 	}
 }

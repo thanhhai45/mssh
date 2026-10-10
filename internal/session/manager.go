@@ -9,6 +9,8 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/pkg/sftp"
+
 	"mssh/internal/store"
 	"mssh/internal/transport"
 )
@@ -178,6 +180,21 @@ func (manager *Manager) Resize(sessionID string, size transport.Size) error {
 		return fmt.Errorf("session %s is not open", sessionID)
 	}
 	return session.Resize(size)
+}
+
+// SFTP returns the file client of an open session, opening it on first use.
+// It is closed with the session, by whichever of Close, CloseConnection or
+// CloseAll ends it, so there is nothing for the caller to close.
+func (manager *Manager) SFTP(sessionID string) (*sftp.Client, error) {
+	session := manager.lookup(sessionID)
+	if session == nil {
+		return nil, fmt.Errorf("session %s is not open", sessionID)
+	}
+	browser, ok := session.(transport.FileBrowser)
+	if !ok {
+		return nil, transport.ErrNoFileBrowsing
+	}
+	return browser.SFTP()
 }
 
 // Close ends one session. Closing something that is not open is not an error:

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/pkg/sftp"
 )
 
 const (
@@ -64,6 +66,22 @@ type Session interface {
 	Resize(size Size) error
 	Close() error
 }
+
+// FileBrowser is a Session that can also move files, over the SSH connection
+// it already holds: no second login, no second tunnel. The ssh and ssm-ssh
+// kinds are; ssm and ssh-config run a program and hold no connection to share.
+//
+// A separate interface rather than a method on Session, so that a session
+// without files does not have to pretend to have them.
+type FileBrowser interface {
+	// SFTP returns the session's file client, opened on first use and shared
+	// after that. It is closed with the session.
+	SFTP() (*sftp.Client, error)
+}
+
+// ErrNoFileBrowsing is what a session that cannot move files answers.
+var ErrNoFileBrowsing = errors.New(
+	"this connection runs a program rather than holding an SSH connection, so it cannot browse files")
 
 type Dialer interface {
 	// Name is used in error messages.
