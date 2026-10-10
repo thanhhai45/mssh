@@ -169,6 +169,11 @@ export function hostKeyQuestionOf(err: unknown): string | null {
   return message.slice(start + HOST_KEY_QUESTION.length).split(' ')[0] || null
 }
 
+/** Go wants every field; anything left out means "any". */
+function fullSessionLogFilter(filter: Partial<SessionLogFilter>): SessionLogFilter {
+  return {workspaceId: '', connectionId: '', from: 0, to: 0, limit: 0, ...filter}
+}
+
 /* ---------------- Calls ---------------- */
 
 export const api = {
@@ -201,7 +206,13 @@ export const api = {
 
   /** The session log, newest first. Anything left out of the filter means "any". */
   listSessionLog: (filter: Partial<SessionLogFilter> = {}): Promise<SessionLogEntry[]> =>
-    App.ListSessionLog({workspaceId: '', connectionId: '', from: 0, to: 0, limit: 0, ...filter}),
+    App.ListSessionLog(fullSessionLogFilter(filter)),
+  /**
+   * Asks where to save, then writes the log there in Go. Resolves to the path
+   * written, or '' when the user cancelled.
+   */
+  exportSessionLog: (filter: Partial<SessionLogFilter>, format: 'csv' | 'json'): Promise<string> =>
+    App.ExportSessionLog(fullSessionLogFilter(filter), format),
   trustHostKey: (token: string): Promise<void> => App.TrustHostKey(token),
 
   setConnectionPassword: (id: string, password: string): Promise<void> => App.SetConnectionPassword(id, password),

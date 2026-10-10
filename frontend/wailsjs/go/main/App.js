@@ -42,6 +42,10 @@ export function DisconnectSession(arg1) {
   return window['go']['main']['App']['DisconnectSession'](arg1);
 }
 
+export function ExportSessionLog(arg1, arg2) {
+  return window['go']['main']['App']['ExportSessionLog'](arg1, arg2);
+}
+
 export function GetAllSettings() {
   return window['go']['main']['App']['GetAllSettings']();
 }

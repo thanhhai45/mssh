@@ -24,6 +24,8 @@ export function DeleteWorkspace(arg1:string):Promise<void>;
 
 export function DisconnectSession(arg1:string):Promise<void>;
 
+export function ExportSessionLog(arg1:store.SessionLogFilter,arg2:string):Promise<string>;
+
 export function GetAllSettings():Promise<Record<string, string>>;
 
 export function GetConnection(arg1:string):Promise<store.Connection>;

@@ -8,7 +8,10 @@ import (
 	"mssh/internal/session"
 	"mssh/internal/store"
 	"mssh/internal/transport"
+	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -498,6 +501,49 @@ func (app *App) CheckSSMTools() error {
 // Zero values in the filter mean "any".
 func (app *App) ListSessionLog(filter store.SessionLogFilter) ([]store.SessionLogEntry, error) {
 	return app.store.ListSessionLog(filter)
+}
+
+// ExportSessionLog asks where to save, then writes the matching part of the
+// log there as CSV or JSON. It returns the path written, or "" when the user
+// cancelled the dialog — not an error.
+//
+// The file is written here rather than in JavaScript: the log never has to be
+// held by the page, and a new file gets the same owner-only permissions as the
+// database it came from.
+func (app *App) ExportSessionLog(filter store.SessionLogFilter, format string) (string, error) {
+	format = strings.ToLower(format)
+	if format != store.ExportCSV && format != store.ExportJSON {
+		return "", fmt.Errorf("unknown export format %q", format)
+	}
+
+	path, err := runtime.SaveFileDialog(app.appContext, runtime.SaveDialogOptions{
+		Title:           "Export session log",
+		DefaultFilename: fmt.Sprintf("mssh-sessions-%s.%s", time.Now().Format("2006-01-02"), format),
+		Filters: []runtime.FileFilter{
+			{DisplayName: strings.ToUpper(format), Pattern: "*." + format},
+		},
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+
+	entries, err := app.store.ListSessionLog(filter)
+	if err != nil {
+		return "", err
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("create %s: %w", path, err)
+	}
+	if err := store.WriteSessionLog(file, format, entries); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	return path, nil
 }
 
 /*------------------ Settings ----------------------------------*/
