@@ -9,7 +9,9 @@ export function RootLayout() {
     return (
         <SidebarProvider>
             <AppSidebar/>
-            <SidebarInset>
+            {/* min-w-0: a flex child will not shrink below its content without it,
+                so one wide table would push every page past the window edge. */}
+            <SidebarInset className="min-w-0">
                 <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
                     <SidebarTrigger className="-ml-1"/>
                     <HeaderBreadcrumb/>

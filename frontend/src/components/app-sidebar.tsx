@@ -1,6 +1,6 @@
 import * as React from 'react'
 import {Link, useRouterState} from '@tanstack/react-router'
-import {Palette} from 'lucide-react'
+import {History, Palette} from 'lucide-react'
 
 import {SidebarBrand} from '@/components/sidebar-brand'
 import {WorkspaceNav} from '@/components/workspace-nav'
@@ -31,6 +31,18 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                     <SidebarGroupLabel>General</SidebarGroupLabel>
                     <SidebarGroupContent>
                         <SidebarMenu>
+                            <SidebarMenuItem>
+                                <SidebarMenuButton
+                                    asChild
+                                    isActive={pathname === '/history'}
+                                    tooltip="History"
+                                >
+                                    <Link to="/history">
+                                        <History/>
+                                        <span>History</span>
+                                    </Link>
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
                             <SidebarMenuItem>
                                 <SidebarMenuButton
                                     asChild

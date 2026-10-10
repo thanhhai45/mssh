@@ -31,6 +31,9 @@ export function HeaderBreadcrumb() {
     if (pathname === '/themes') {
         return <Crumbs trail={['Appearance']}/>
     }
+    if (pathname === '/history') {
+        return <Crumbs trail={['History']}/>
+    }
     if (!match) {
         return <Crumbs trail={['Workspaces']}/>
     }

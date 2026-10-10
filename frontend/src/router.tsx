@@ -1,5 +1,6 @@
 import {createRootRoute, createRoute, createRouter} from '@tanstack/react-router'
 
+import {HistoryPage} from '@/routes/history-page'
 import {RootLayout} from '@/routes/root-layout'
 import {ServerTerminalPage} from '@/routes/server-terminal-page'
 import {ThemesPage} from '@/routes/themes-page'
@@ -27,7 +28,13 @@ const themesRoute = createRoute({
     component: ThemesPage,
 })
 
-const routeTree = rootRoute.addChildren([workspacesRoute, serverTerminalRoute, themesRoute])
+const historyRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/history',
+    component: HistoryPage,
+})
+
+const routeTree = rootRoute.addChildren([workspacesRoute, serverTerminalRoute, themesRoute, historyRoute])
 
 export const router = createRouter({routeTree})
 
