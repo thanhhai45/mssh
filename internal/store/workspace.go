@@ -86,6 +86,30 @@ func normalizeCredentialsSource(source string) (string, error) {
 	}
 }
 
+// ErrStoredKeysNeedRegion refuses a workspace that keeps its own AWS keys but
+// names no region.
+//
+// With the CLI's own configuration a region can come from ~/.aws/config. With
+// stored keys there is usually no such file — that is why the keys are stored
+// here — so an empty region only fails later, at connect time, with "You must
+// specify a region". Saying so when the workspace is saved is kinder.
+var ErrStoredKeysNeedRegion = errors.New(
+	"a workspace that keeps its own AWS keys needs an AWS region")
+
+// credentialsSourceOf validates the AWS half of a workspace input and returns
+// the normalised source. Create and Update both go through it, so neither can
+// write a combination the other would refuse.
+func credentialsSourceOf(input WorkspaceInput) (string, error) {
+	source, err := normalizeCredentialsSource(input.AWSCredentialsSource)
+	if err != nil {
+		return "", err
+	}
+	if source == AWSCredentialsStored && strings.TrimSpace(input.AWSRegion) == "" {
+		return "", ErrStoredKeysNeedRegion
+	}
+	return source, nil
+}
+
 func (s *Store) ListWorkspaces() ([]Workspace, error) {
 	rows, err := s.db.Query(
 		`SELECT ` + workspaceColumns + ` FROM workspaces ORDER BY sort_order, name`,
@@ -141,7 +165,7 @@ func (s *Store) CreateWorkspace(input WorkspaceInput) (Workspace, error) {
 		color = "slate"
 	}
 
-	source, err := normalizeCredentialsSource(input.AWSCredentialsSource)
+	source, err := credentialsSourceOf(input)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -186,7 +210,7 @@ func (s *Store) UpdateWorkspace(id string, input WorkspaceInput) (Workspace, err
 		color = "slate"
 	}
 
-	source, err := normalizeCredentialsSource(input.AWSCredentialsSource)
+	source, err := credentialsSourceOf(input)
 	if err != nil {
 		return Workspace{}, err
 	}

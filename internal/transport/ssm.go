@@ -42,7 +42,7 @@ func (ssmDialer) Dial(
 	)
 
 	command := exec.CommandContext(dialContext, "aws", arguments...)
-	command.Env = awsEnvironment(pseudoTerminalEnvironment(), config.AWSCredentials)
+	command.Env = awsEnvironment(pseudoTerminalEnvironment(), config.AWSCredentials, config.AWSRegion)
 
 	// session-manager-plugin looks at whether its stdin is a terminal to decide
 	// on raw mode, and reads the window size from it. Give it a plain pipe and

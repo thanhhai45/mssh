@@ -79,7 +79,11 @@ export function WorkspaceDialog({
 
     const stored = credentialsSource === 'stored'
     const hasKeyPair = useShellKeys || (accessKeyId.trim() !== '' && (hasSavedSecret || secretAccessKey !== ''))
-    const canSave = name.trim() !== '' && (!stored || hasKeyPair)
+    // Stored keys come with no ~/.aws/config to take a region from. Go refuses
+    // the combination too (store.ErrStoredKeysNeedRegion); this only says so
+    // before the user presses Save.
+    const missingRegion = stored && awsRegion.trim() === ''
+    const canSave = name.trim() !== '' && (!stored || hasKeyPair) && !missingRegion
 
     async function readShell() {
         setReadingShell(true)
@@ -329,13 +333,15 @@ export function WorkspaceDialog({
                                     value={awsRegion}
                                     onChange={(event) => setAwsRegion(event.target.value)}
                                     placeholder="ap-southeast-1"
+                                    aria-invalid={missingRegion}
                                 />
                             </div>
                         </div>
 
                         <p className="text-xs text-muted-foreground">
-                            SSM connections in this workspace inherit these two unless they set
-                            their own. Leave both empty to let the AWS CLI use its own default.
+                            {stored
+                                ? 'A region is required with stored keys: there is no ~/.aws/config to take one from. Connections in this workspace use it, System SSH ProxyCommands included.'
+                                : 'SSM connections in this workspace inherit these two unless they set their own. Leave both empty to let the AWS CLI use its own default.'}
                         </p>
                     </div>
 

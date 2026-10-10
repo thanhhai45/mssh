@@ -256,19 +256,25 @@ func (app *App) ImportAWSFromShell(workspaceID string) error {
 		return err
 	}
 
+	region := workspace.AWSRegion
+	if region == "" {
+		// Fill the region only when the workspace has none; never overwrite
+		// a choice made by hand.
+		region = preview.Region
+	}
+	// Checked before anything is saved: the store would refuse the switch to
+	// stored keys anyway, but only after the secret had already been written.
+	if region == "" {
+		return fmt.Errorf("%w — your shell exports no AWS_REGION either, so "+
+			"set one on the workspace first", store.ErrStoredKeysNeedRegion)
+	}
+
 	// The secret first. If switching the workspace over then fails, it is
 	// left on the CLI with an unused secret, which is harmless; the other
 	// order could leave it set to stored keys with none saved.
 	if err := app.SetWorkspaceAWSSecret(
 		workspaceID, credentials.SecretAccessKey, credentials.SessionToken); err != nil {
 		return err
-	}
-
-	region := workspace.AWSRegion
-	if region == "" {
-		// Fill the region only when the workspace has none; never overwrite
-		// a choice made by hand.
-		region = preview.Region
 	}
 
 	_, err = app.store.UpdateWorkspace(workspaceID, store.WorkspaceInput{

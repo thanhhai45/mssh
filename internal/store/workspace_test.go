@@ -183,6 +183,7 @@ func TestWorkspaceCredentialsSource(t *testing.T) {
 		Name:                 "Stored",
 		AWSCredentialsSource: AWSCredentialsStored,
 		AWSAccessKeyID:       "  AKIAEXAMPLE  ",
+		AWSRegion:            "ap-southeast-1",
 	})
 	if err != nil {
 		t.Fatalf("CreateWorkspace stored: %v", err)
@@ -230,5 +231,36 @@ func TestWorkspaceCredentialsSource(t *testing.T) {
 	}
 	if _, err := s.UpdateWorkspace(stored.ID, WorkspaceInput{Name: "Typo", AWSCredentialsSource: "stord"}); err == nil {
 		t.Error("UpdateWorkspace accepted an unknown source")
+	}
+}
+
+// Stored keys come with no ~/.aws/config to fall back on, so a workspace on
+// them without a region only fails later, at connect time, with "You must
+// specify a region". Both write paths refuse it up front instead.
+func TestStoredKeysNeedARegion(t *testing.T) {
+	s := openTest(t)
+
+	noRegion := WorkspaceInput{
+		Name:                 "Keys, no region",
+		AWSCredentialsSource: AWSCredentialsStored,
+		AWSAccessKeyID:       "AKIAEXAMPLE",
+		AWSRegion:            "   ",
+	}
+	if _, err := s.CreateWorkspace(noRegion); !errors.Is(err, ErrStoredKeysNeedRegion) {
+		t.Errorf("CreateWorkspace: err = %v, want ErrStoredKeysNeedRegion", err)
+	}
+
+	existing, err := s.CreateWorkspace(WorkspaceInput{Name: "Plain"})
+	if err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
+	}
+	if _, err := s.UpdateWorkspace(existing.ID, noRegion); !errors.Is(err, ErrStoredKeysNeedRegion) {
+		t.Errorf("UpdateWorkspace: err = %v, want ErrStoredKeysNeedRegion", err)
+	}
+
+	// The CLI's own configuration may supply the region, so there it stays
+	// optional — exactly as before stored keys existed.
+	if _, err := s.CreateWorkspace(WorkspaceInput{Name: "CLI, no region"}); err != nil {
+		t.Errorf("a CLI workspace without a region was refused: %v", err)
 	}
 }

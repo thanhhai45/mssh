@@ -145,7 +145,7 @@ func startSSMTunnel(dialContext context.Context, config Config) (*processConn, e
 	}, awsFlags(effectiveProfile(config), config.AWSRegion)...)
 
 	command := exec.CommandContext(dialContext, "aws", arguments...)
-	command.Env = awsEnvironment(os.Environ(), config.AWSCredentials)
+	command.Env = awsEnvironment(os.Environ(), config.AWSCredentials, config.AWSRegion)
 
 	// No pty here, unlike the plain ssm kind. This process is carrying the SSH
 	// wire protocol, and a terminal would translate newlines and interpret

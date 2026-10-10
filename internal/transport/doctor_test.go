@@ -186,13 +186,13 @@ func TestAWSEnvironment(t *testing.T) {
 		"AWS_REGION=eu-west-1",
 	}
 
-	if got := awsEnvironment(base, nil); !slices.Equal(got, base) {
-		t.Errorf("nil credentials changed the environment: %v", got)
+	if got := awsEnvironment(base, nil, ""); !slices.Equal(got, base) {
+		t.Errorf("no credentials and no region changed the environment: %v", got)
 	}
 
 	got := awsEnvironment(base, &AWSCredentials{
 		AccessKeyID: "AKIANEW", SecretAccessKey: "wJalrNEW",
-	})
+	}, "")
 
 	count := map[string]int{}
 	values := map[string]string{}
@@ -213,14 +213,15 @@ func TestAWSEnvironment(t *testing.T) {
 			t.Errorf("%s survived; it could outrank or taint the stored keys", name)
 		}
 	}
-	// Everything unrelated to credentials is untouched, region included.
+	// Everything unrelated to credentials is untouched, and with no region
+	// given, the inherited one stays.
 	if values["PATH"] != "/usr/bin" || values["AWS_REGION"] != "eu-west-1" {
 		t.Errorf("unrelated variables were lost: %v", got)
 	}
 
 	withToken := awsEnvironment(nil, &AWSCredentials{
 		AccessKeyID: "A", SecretAccessKey: "S", SessionToken: "T",
-	})
+	}, "")
 	if !slices.Contains(withToken, "AWS_SESSION_TOKEN=T") {
 		t.Errorf("the session token was not passed on: %v", withToken)
 	}
@@ -255,5 +256,44 @@ func TestExplainStoredKeysFailure(t *testing.T) {
 		if strings.Contains(got, "sso login") {
 			t.Errorf("explanation %q sends a stored-keys user to aws sso login", got)
 		}
+	}
+}
+
+// The ssh-config kind cannot pass --region: its aws runs inside the user's
+// ProxyCommand. The environment is the only way the workspace's region gets
+// there, with stored keys or without.
+func TestAWSEnvironmentCarriesTheRegion(t *testing.T) {
+	base := []string{"PATH=/usr/bin", "AWS_REGION=inherited", "AWS_DEFAULT_REGION=inherited"}
+
+	for _, testCase := range []struct {
+		name        string
+		credentials *AWSCredentials
+	}{
+		{"with stored keys", &AWSCredentials{AccessKeyID: "AKIA", SecretAccessKey: "S"}},
+		{"with the CLI's own credentials", nil},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := awsEnvironment(base, testCase.credentials, "ap-southeast-1")
+
+			count := map[string]int{}
+			values := map[string]string{}
+			for _, variable := range got {
+				name, value, _ := strings.Cut(variable, "=")
+				count[name]++
+				values[name] = value
+			}
+			for _, name := range []string{"AWS_REGION", "AWS_DEFAULT_REGION"} {
+				if count[name] != 1 || values[name] != "ap-southeast-1" {
+					t.Errorf("%s: %d of them, value %q; want exactly one, ap-southeast-1",
+						name, count[name], values[name])
+				}
+			}
+			if values["PATH"] != "/usr/bin" {
+				t.Error("PATH was lost")
+			}
+			if (testCase.credentials == nil) != (count["AWS_ACCESS_KEY_ID"] == 0) {
+				t.Errorf("keys present = %v, want %v", count["AWS_ACCESS_KEY_ID"] != 0, testCase.credentials != nil)
+			}
+		})
 	}
 }

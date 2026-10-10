@@ -136,32 +136,54 @@ var awsCredentialVariables = map[string]bool{
 	"AWS_SECURITY_TOKEN":    true,
 }
 
+// awsRegionVariables are the two names the AWS CLI reads a region from. Both
+// are set, to the same value: AWS_REGION is the current one, and an older CLI
+// or SDK inside a ProxyCommand may still read only AWS_DEFAULT_REGION.
+var awsRegionVariables = map[string]bool{
+	"AWS_REGION":         true,
+	"AWS_DEFAULT_REGION": true,
+}
+
 // awsEnvironment is the environment for a child that will run aws, directly or
 // through an ssh ProxyCommand
 //
-// With stored keys, every variable above is dropped first. Two sets of
-// credentials in one environment is not a configuration anybody chose, and
-// which one the CLI picks is not something to leave to chance.
-func awsEnvironment(base []string, credentials *AWSCredentials) []string {
-	if credentials == nil {
+// With stored keys, every credential variable above is dropped first. Two
+// sets of credentials in one environment is not a configuration anybody
+// chose, and which one the CLI picks is not something to leave to chance.
+//
+// The region goes in the environment too. The ssm kinds also pass --region,
+// which outranks it, but the ssh-config kind cannot: its aws command sits in
+// the user's ProxyCommand, where mssh adds no flags. Without this, a workspace
+// on stored keys — usually a machine with no ~/.aws/config to fall back on —
+// failed there with "You must specify a region".
+func awsEnvironment(base []string, credentials *AWSCredentials, region string) []string {
+	if credentials == nil && region == "" {
 		return base
 	}
 
-	kept := make([]string, 0, len(base)+3)
+	kept := make([]string, 0, len(base)+5)
 	for _, variable := range base {
 		name, _, _ := strings.Cut(variable, "=")
-		if awsCredentialVariables[name] {
+		if credentials != nil && awsCredentialVariables[name] {
+			continue
+		}
+		if region != "" && awsRegionVariables[name] {
 			continue
 		}
 		kept = append(kept, variable)
 	}
 
-	kept = append(kept,
-		"AWS_ACCESS_KEY_ID="+credentials.AccessKeyID,
-		"AWS_SECRET_ACCESS_KEY="+credentials.SecretAccessKey,
-	)
-	if credentials.SessionToken != "" {
-		kept = append(kept, "AWS_SESSION_TOKEN="+credentials.SessionToken)
+	if credentials != nil {
+		kept = append(kept,
+			"AWS_ACCESS_KEY_ID="+credentials.AccessKeyID,
+			"AWS_SECRET_ACCESS_KEY="+credentials.SecretAccessKey,
+		)
+		if credentials.SessionToken != "" {
+			kept = append(kept, "AWS_SESSION_TOKEN="+credentials.SessionToken)
+		}
+	}
+	if region != "" {
+		kept = append(kept, "AWS_REGION="+region, "AWS_DEFAULT_REGION="+region)
 	}
 	return kept
 }
@@ -186,7 +208,7 @@ func checkAWSCredentials(config Config) error {
 		[]string{"sts", "get-caller-identity"},
 		awsFlags(effectiveProfile(config), config.AWSRegion)...)
 	command := exec.CommandContext(checkContext, "aws", arguments...)
-	command.Env = awsEnvironment(os.Environ(), config.AWSCredentials)
+	command.Env = awsEnvironment(os.Environ(), config.AWSCredentials, config.AWSRegion)
 
 	output, err := command.CombinedOutput()
 	if err == nil {
