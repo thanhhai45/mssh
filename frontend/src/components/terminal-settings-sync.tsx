@@ -1,5 +1,6 @@
 import {useEffect} from 'react'
 
+import {useTheme} from '@/components/theme-provider'
 import {useSettings} from '@/lib/settings-store'
 import {applyTerminalSettings} from '@/lib/terminal-session'
 import {terminalTheme} from '@/lib/terminal-themes'
@@ -14,9 +15,11 @@ import {terminalTheme} from '@/lib/terminal-themes'
  */
 export function TerminalSettingsSync() {
     const {settings} = useSettings()
+    // 'auto' follows the app, so the app switching is a change to carry over too.
+    const {resolvedTheme} = useTheme()
 
     useEffect(() => {
-        const theme = terminalTheme(settings['terminal.theme'])
+        const theme = terminalTheme(settings['terminal.theme'], resolvedTheme)
 
         applyTerminalSettings({
             fontFamily: settings['terminal.fontFamily'],
@@ -30,7 +33,7 @@ export function TerminalSettingsSync() {
             '--terminal-background',
             theme.background ?? '#000000',
         )
-    }, [settings])
+    }, [settings, resolvedTheme])
 
     return null
 }

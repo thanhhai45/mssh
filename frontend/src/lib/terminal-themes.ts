@@ -9,13 +9,140 @@ import type {ITheme} from '@xterm/xterm'
  * which one you picked.
  */
 export type TerminalThemeName =
+    | 'github-dark'
+    | 'github-light'
+    | 'iterm2-default'
+    | 'vscode-dark-modern'
     | 'dracula'
     | 'nord'
     | 'solarized-dark'
     | 'gruvbox-dark'
     | 'tokyo-night'
 
+/**
+ * Not a palette but a choice: GitHub Light while the app is light, GitHub Dark
+ * while it is dark. The default, so a terminal never sits black inside a white
+ * window, or white inside a black one, unless someone chose that.
+ */
+export const AUTO_THEME = 'auto'
+
+/*
+ * The first four are the palettes people already know from elsewhere, copied
+ * from github.com/mbadolato/iTerm2-Color-Schemes (windowsterminal/) rather
+ * than typed from memory. Two adjustments, both to selection only:
+ *
+ *  - GitHub sets selectionBackground to the foreground colour. Windows
+ *    Terminal draws selection translucent; xterm.js draws it as given, which
+ *    would hide the selected text entirely. Same colour, a quarter opacity.
+ *  - iTerm2 selects in pale blue but keeps white text, unreadable in xterm.js;
+ *    iTerm2 itself switches selected text to black, so that is set too.
+ */
 export const TERMINAL_THEMES: Record<TerminalThemeName, {label: string; theme: ITheme}> = {
+    'github-dark': {
+        label: 'GitHub Dark',
+        theme: {
+            background: '#0d1117',
+            foreground: '#e6edf3',
+            cursor: '#2f81f7',
+            selectionBackground: '#e6edf340',
+            black: '#484f58',
+            red: '#ff7b72',
+            green: '#3fb950',
+            yellow: '#d29922',
+            blue: '#58a6ff',
+            magenta: '#bc8cff',
+            cyan: '#39c5cf',
+            white: '#b1bac4',
+            brightBlack: '#6e7681',
+            brightRed: '#ffa198',
+            brightGreen: '#56d364',
+            brightYellow: '#e3b341',
+            brightBlue: '#79c0ff',
+            brightMagenta: '#d2a8ff',
+            brightCyan: '#56d4dd',
+            brightWhite: '#ffffff',
+        },
+    },
+
+    'github-light': {
+        label: 'GitHub Light',
+        theme: {
+            background: '#ffffff',
+            foreground: '#1f2328',
+            cursor: '#0969da',
+            selectionBackground: '#1f232840',
+            black: '#24292f',
+            red: '#cf222e',
+            green: '#116329',
+            yellow: '#4d2d00',
+            blue: '#0969da',
+            magenta: '#8250df',
+            cyan: '#1b7c83',
+            white: '#6e7781',
+            brightBlack: '#57606a',
+            brightRed: '#a40e26',
+            brightGreen: '#1a7f37',
+            brightYellow: '#633c01',
+            brightBlue: '#218bff',
+            brightMagenta: '#a475f9',
+            brightCyan: '#3192aa',
+            brightWhite: '#8c959f',
+        },
+    },
+
+    'iterm2-default': {
+        label: 'iTerm2 Default',
+        theme: {
+            background: '#000000',
+            foreground: '#ffffff',
+            cursor: '#e5e5e5',
+            selectionBackground: '#c1deff',
+            selectionForeground: '#000000',
+            black: '#000000',
+            red: '#c91b00',
+            green: '#00c200',
+            yellow: '#c7c400',
+            blue: '#2225c4',
+            magenta: '#ca30c7',
+            cyan: '#00c5c7',
+            white: '#ffffff',
+            brightBlack: '#686868',
+            brightRed: '#ff6e67',
+            brightGreen: '#5ffa68',
+            brightYellow: '#fffc67',
+            brightBlue: '#6871ff',
+            brightMagenta: '#ff77ff',
+            brightCyan: '#60fdff',
+            brightWhite: '#ffffff',
+        },
+    },
+
+    'vscode-dark-modern': {
+        label: 'VS Code Dark Modern',
+        theme: {
+            background: '#1f1f1f',
+            foreground: '#cccccc',
+            cursor: '#ffffff',
+            selectionBackground: '#3a3d41',
+            black: '#000000',
+            red: '#cd3131',
+            green: '#0dbc79',
+            yellow: '#e5e510',
+            blue: '#2472c8',
+            magenta: '#bc3fbc',
+            cyan: '#11a8cd',
+            white: '#e5e5e5',
+            brightBlack: '#666666',
+            brightRed: '#f14c4c',
+            brightGreen: '#23d18b',
+            brightYellow: '#f5f543',
+            brightBlue: '#3b8eea',
+            brightMagenta: '#d670d6',
+            brightCyan: '#29b8db',
+            brightWhite: '#e5e5e5',
+        },
+    },
+
     'dracula': {
         label: 'Dracula',
         theme: {
@@ -149,7 +276,16 @@ export const TERMINAL_THEMES: Record<TerminalThemeName, {label: string; theme: I
 
 export const TERMINAL_THEME_NAMES = Object.keys(TERMINAL_THEMES) as TerminalThemeName[]
 
-/** Falls back to Dracula so a name the app does not know still renders. */
-export function terminalTheme(name: string): ITheme {
-    return (TERMINAL_THEMES[name as TerminalThemeName] ?? TERMINAL_THEMES.dracula).theme
+/**
+ * The palette a setting stands for. `appearance` is the app's light or dark as
+ * actually shown (ThemeProvider's resolvedTheme), which 'auto' follows. A name
+ * the app does not know — say, from a newer version — behaves as 'auto'.
+ */
+export function resolveTerminalTheme(name: string, appearance: 'light' | 'dark'): TerminalThemeName {
+    if (name in TERMINAL_THEMES) return name as TerminalThemeName
+    return appearance === 'dark' ? 'github-dark' : 'github-light'
+}
+
+export function terminalTheme(name: string, appearance: 'light' | 'dark'): ITheme {
+    return TERMINAL_THEMES[resolveTerminalTheme(name, appearance)].theme
 }

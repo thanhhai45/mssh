@@ -15,7 +15,7 @@ export const SETTING_DEFAULTS = {
     'terminal.fontSize': '13',
     'terminal.lineHeight': '1.2',
     'terminal.cursorStyle': 'block',
-    'terminal.theme': 'dracula',
+    'terminal.theme': 'auto',
 } as const
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS
