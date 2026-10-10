@@ -40,7 +40,7 @@ func TestDefaultPath(t *testing.T) {
 func TestOpenCreatesSchema(t *testing.T) {
 	s := openTest(t)
 
-	for _, table := range []string{"workspaces", "connections", "settings", "connection_secrets", "workspace_secrets"} {
+	for _, table := range []string{"workspaces", "connections", "settings", "connection_secrets", "workspace_secrets", "session_log"} {
 		var name string
 		err := s.db.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table,
