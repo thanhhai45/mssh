@@ -322,18 +322,20 @@ function EntryRow({entry, onOpen, onDownload}: {
             <li>
                 <button type="button" className={cn(row, 'hover:bg-accent')} title={details} onClick={onOpen}>
                     {content}
+                    {/* Where a file has its Download button, so the columns line up. */}
+                    <span className="size-6 shrink-0"/>
                 </button>
             </li>
         )
     }
     return (
-        <li className={cn(row, 'group hover:bg-accent')} title={details} onDoubleClick={onDownload}>
+        <li className={cn(row, 'hover:bg-accent')} title={details} onDoubleClick={onDownload}>
             {content}
             <Button
                 variant="ghost"
                 size="icon-xs"
                 title="Download"
-                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                className="text-muted-foreground hover:text-foreground"
                 onClick={onDownload}
             >
                 <Download/>
