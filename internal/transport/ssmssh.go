@@ -17,6 +17,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// tunnelHandshakeLimit bounds the SSH handshake through the tunnel, so a
+// tunnel that goes quiet fails instead of hanging forever. A variable only so
+// that tests need not wait for real.
+var tunnelHandshakeLimit = 30 * time.Second
+
 // defaultSSHDocument is the SSM document that turns a session into a plain
 // byte pipe suitable for carrying SSH, instead of an interactive shell.
 const defaultSSHDocument = "AWS-StartSSHSession"
@@ -91,7 +96,7 @@ func (ssmSSHDialer) Dial(
 		// the name known_hosts is searched for. It has to carry a port:
 		// knownhosts runs SplitHostPort on this too.
 		sshConnection, channels, requests, err = handshake(
-			opened, opened.address, clientConfig, 30*time.Second)
+			opened, opened.address, clientConfig, tunnelHandshakeLimit)
 		if err == nil {
 			tunnel = opened
 			handshakeErr = nil

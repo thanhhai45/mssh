@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -144,6 +145,12 @@ type fakeAWS struct {
 	tunnelStderr string
 	// sshd is where a tunnel that goes through connects.
 	sshd string
+	// silent makes a tunnel that never says a word: aws stuck, or a network
+	// that swallows everything.
+	silent bool
+	// noise is what a tunnel that goes through prints on stderr first, as
+	// the real one prints warnings.
+	noise string
 }
 
 // useFakeAWS puts the fake first on PATH and returns the files it reports in.
@@ -171,6 +178,8 @@ func useFakeAWS(t *testing.T, fake fakeAWS, withPlugin bool) (argsLog string, pi
 	t.Setenv("MSSH_FAKE_AWS_DROPS", strconv.Itoa(fake.drops))
 	t.Setenv("MSSH_FAKE_AWS_TUNNEL_STDERR", fake.tunnelStderr)
 	t.Setenv("MSSH_FAKE_SSHD", fake.sshd)
+	t.Setenv("MSSH_FAKE_AWS_SILENT", map[bool]string{true: "1"}[fake.silent])
+	t.Setenv("MSSH_FAKE_AWS_NOISE", fake.noise)
 	return argsLog, pidFile
 }
 
@@ -221,6 +230,11 @@ func fakeInteractiveSession() int {
 }
 
 func fakeTunnel() int {
+	if os.Getenv("MSSH_FAKE_AWS_SILENT") != "" {
+		_ = os.WriteFile(os.Getenv("MSSH_FAKE_AWS_PID"), []byte(strconv.Itoa(os.Getpid())), 0o600)
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		return 0
+	}
 	drops, _ := strconv.Atoi(os.Getenv("MSSH_FAKE_AWS_DROPS"))
 	if countTunnel() <= drops {
 		if said := os.Getenv("MSSH_FAKE_AWS_TUNNEL_STDERR"); said != "" {
@@ -229,6 +243,9 @@ func fakeTunnel() int {
 		return 0
 	}
 
+	if noise := os.Getenv("MSSH_FAKE_AWS_NOISE"); noise != "" {
+		_, _ = fmt.Fprintln(os.Stderr, noise)
+	}
 	connection, err := net.Dial("tcp", os.Getenv("MSSH_FAKE_SSHD"))
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "fake tunnel:", err)
@@ -499,25 +516,40 @@ func TestPreflightOnAnExpiredSession(t *testing.T) {
 func dialSSMSSH(t *testing.T, fake fakeAWS) (Session, *sessionLog, string, string, error) {
 	t.Helper()
 	address, hostKey := fakeSSHD(t)
-	fake.sshd = address
-	argsLog, pidFile := useFakeAWS(t, fake, true)
+	return dialSSMSSHWith(t, fake, address, trustedKnownHosts(t, "i-0test", hostKey))
+}
 
-	config := Config{
+// dialSSMSSHWith dials through the fake tunnel to sshd, checking host keys
+// against knownHostsPath.
+func dialSSMSSHWith(t *testing.T, fake fakeAWS, sshd string, knownHostsPath string) (Session, *sessionLog, string, string, error) {
+	t.Helper()
+	config, argsLog, pidFile := prepareSSMSSH(t, fake, sshd, knownHostsPath)
+	log := newSessionLog()
+	session, err := ssmSSHDialer{}.Dial(context.Background(), config, Size{Cols: 80, Rows: 24}, log.onOutput, log.onExit)
+	return session, log, argsLog, pidFile, err
+}
+
+// prepareSSMSSH sets up the fake aws and returns the config to dial with.
+// Apart from the dial itself because it changes the environment, which only
+// the test's own goroutine may do.
+func prepareSSMSSH(t *testing.T, fake fakeAWS, sshd string, knownHostsPath string) (config Config, argsLog string, pidFile string) {
+	t.Helper()
+	fake.sshd = sshd
+	argsLog, pidFile = useFakeAWS(t, fake, true)
+
+	config = Config{
 		Kind:           KindSSMSSH,
 		Target:         "i-0test",
 		Username:       "ec2-user",
 		AuthMethod:     AuthPassword,
 		Password:       "unused: the test server takes anyone",
-		KnownHostsPath: trustedKnownHosts(t, "i-0test", hostKey),
+		KnownHostsPath: knownHostsPath,
 	}
 	// The pause is for a real server's queue; the fake has none.
 	original := preAuthDropPause
 	preAuthDropPause = 10 * time.Millisecond
 	t.Cleanup(func() { preAuthDropPause = original })
-
-	log := newSessionLog()
-	session, err := ssmSSHDialer{}.Dial(context.Background(), config, Size{Cols: 80, Rows: 24}, log.onOutput, log.onExit)
-	return session, log, argsLog, pidFile, err
+	return config, argsLog, pidFile
 }
 
 func tunnelsOpened(t *testing.T, argsLog string) int {
@@ -591,6 +623,107 @@ func TestSSMSSHGivesUpAfterThreeDrops(t *testing.T) {
 	if opened := tunnelsOpened(t, argsLog); opened != preAuthDropAttempts {
 		t.Errorf("opened %d tunnels, want %d", opened, preAuthDropAttempts)
 	}
+}
+
+// processAlive reports whether the process in pidFile is still running.
+func processAlive(t *testing.T, pidFile string) bool {
+	t.Helper()
+	content, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("tunnel pid: %v", err)
+	}
+	pid, _ := strconv.Atoi(string(content))
+	return syscall.Kill(pid, 0) == nil
+}
+
+// A tunnel that never answers must not hang the dial: the handshake deadline
+// on processConn's pipes is what ends it, and the stuck aws goes with it.
+func TestSSMSSHGivesUpOnASilentTunnel(t *testing.T) {
+	original := tunnelHandshakeLimit
+	tunnelHandshakeLimit = 300 * time.Millisecond
+	t.Cleanup(func() { tunnelHandshakeLimit = original })
+
+	address, hostKey := fakeSSHD(t)
+	config, argsLog, pidFile := prepareSSMSSH(t, fakeAWS{silent: true}, address,
+		trustedKnownHosts(t, "i-0test", hostKey))
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := ssmSSHDialer{}.Dial(context.Background(), config, Size{Cols: 80, Rows: 24},
+			func([]byte) {}, func(error) {})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "timeout") {
+			t.Fatalf("Dial = %v, want a timeout", err)
+		}
+		if processAlive(t, pidFile) {
+			t.Error("the stuck tunnel process is still running")
+		}
+		// A timeout is not a drop before authentication: no retry.
+		if opened := tunnelsOpened(t, argsLog); opened != 1 {
+			t.Errorf("opened %d tunnels, want 1", opened)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Dial is still waiting on a tunnel that never answers")
+	}
+}
+
+// First contact through the tunnel is a question for the user, not a failure:
+// the app finds the key in the error and offers to trust it.
+func TestSSMSSHAsksAboutAnUnknownHost(t *testing.T) {
+	address, hostKey := fakeSSHD(t)
+	empty := filepath.Join(t.TempDir(), "known_hosts")
+
+	_, _, argsLog, _, err := dialSSMSSHWith(t, fakeAWS{}, address, empty)
+	var unknown *UnknownHostKeyError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("Dial = %v, want an UnknownHostKeyError the app can find", err)
+	}
+	if unknown.Host != "i-0test" || ssh.FingerprintSHA256(unknown.Key) != ssh.FingerprintSHA256(hostKey) {
+		t.Errorf("asks about %s %s, want i-0test %s", unknown.Host,
+			ssh.FingerprintSHA256(unknown.Key), ssh.FingerprintSHA256(hostKey))
+	}
+	if !strings.Contains(err.Error(), "has never been connected to") {
+		t.Errorf("message = %q", err)
+	}
+	if opened := tunnelsOpened(t, argsLog); opened != 1 {
+		t.Errorf("opened %d tunnels, want 1", opened)
+	}
+}
+
+// A key that changed is never offered for trust, and never retried.
+func TestSSMSSHRefusesAChangedHostKey(t *testing.T) {
+	address, _ := fakeSSHD(t)
+	_, otherKey := fakeSSHD(t)
+
+	_, _, argsLog, _, err := dialSSMSSHWith(t, fakeAWS{}, address, trustedKnownHosts(t, "i-0test", otherKey))
+	if err == nil || !strings.Contains(err.Error(), "has CHANGED") {
+		t.Fatalf("Dial = %v, want the changed-key warning", err)
+	}
+	var unknown *UnknownHostKeyError
+	if errors.As(err, &unknown) {
+		t.Error("a changed key was offered for trust")
+	}
+	if opened := tunnelsOpened(t, argsLog); opened != 1 {
+		t.Errorf("opened %d tunnels, want 1", opened)
+	}
+}
+
+// AWS prints warnings on stderr. Kept out of the byte stream, they cost
+// nothing; mixed into it, they would break the handshake at once.
+func TestSSMSSHKeepsTunnelStderrOutOfTheStream(t *testing.T) {
+	session, log, _, _, err := dialSSMSSH(t, fakeAWS{noise: "SSH-2.0-not-a-server\nWarning: something harmless\n"})
+	if err != nil {
+		t.Fatalf("Dial with a chatty tunnel: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+	if _, err := session.Write([]byte("still clean\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	log.waitFor(t, "still clean")
 }
 
 /* ---------------- kind ssh: the same retry, over TCP ---------------- */
