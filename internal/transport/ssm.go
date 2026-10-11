@@ -36,12 +36,7 @@ func (ssmDialer) Dial(
 	onOutput func([]byte),
 	onExit func(error),
 ) (Session, error) {
-	arguments := append(
-		[]string{"ssm", "start-session", "--target", config.Target},
-		awsFlags(effectiveProfile(config), config.AWSRegion)...,
-	)
-
-	command := exec.CommandContext(dialContext, "aws", arguments...)
+	command := exec.CommandContext(dialContext, "aws", ssmSessionArguments(config)...)
 	command.Env = awsEnvironment(pseudoTerminalEnvironment(), config.AWSCredentials, config.AWSRegion)
 
 	// session-manager-plugin looks at whether its stdin is a terminal to decide
@@ -50,4 +45,14 @@ func (ssmDialer) Dial(
 	return startPTYProcess(command, size, onOutput, onExit, func(output string) string {
 		return explainSSMFailure(config.Target, output)
 	})
+}
+
+// ssmSessionArguments is the command line for an interactive session: the
+// instance, then the profile and region flags when there are any. Kept apart
+// from Dial so the exact arguments can be tested without running anything.
+func ssmSessionArguments(config Config) []string {
+	return append(
+		[]string{"ssm", "start-session", "--target", config.Target},
+		awsFlags(effectiveProfile(config), config.AWSRegion)...,
+	)
 }

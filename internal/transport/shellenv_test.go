@@ -32,8 +32,16 @@ exec cat "$MSSH_FAKE_SHELL_OUTPUT"
 `
 
 func TestMain(m *testing.M) {
+	// The fake aws is this same binary, run again: see ssm_test.go.
+	if os.Getenv(fakeAWSMode) != "" {
+		os.Exit(runFakeAWS(os.Args[1:]))
+	}
+
 	directory, err := os.MkdirTemp("", "mssh-fake-shell")
 	if err != nil {
+		panic(err)
+	}
+	if err := prepareFakeAWS(directory); err != nil {
 		panic(err)
 	}
 

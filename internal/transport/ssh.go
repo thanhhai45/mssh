@@ -83,12 +83,14 @@ const (
 	// preAuthDropAttempts is how many times a connection turned away before
 	// authentication is tried again.
 	preAuthDropAttempts = 3
-	// preAuthDropPause gives the server's startup queue a moment to drain.
-	preAuthDropPause = 1500 * time.Millisecond
 	// handshakeLimit bounds the whole handshake, since ClientConfig.Timeout
 	// only applies to ssh.Dial, which this file does not use.
 	handshakeLimit = 15 * time.Second
 )
+
+// preAuthDropPause gives the server's startup queue a moment to drain. A
+// variable only so that tests of the retry need not wait for real.
+var preAuthDropPause = 1500 * time.Millisecond
 
 // dialAndHandshake opens the TCP connection and runs the SSH handshake, trying
 // again while the server hangs up before authentication.
@@ -103,37 +105,39 @@ func dialAndHandshake(
 	address string,
 	clientConfig *ssh.ClientConfig,
 ) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
-	var lastErr error
-
-	for attempt := 1; attempt <= preAuthDropAttempts; attempt++ {
-		if attempt > 1 {
-			select {
-			case <-dialContext.Done():
-				return nil, nil, nil, dialContext.Err()
-			case <-time.After(preAuthDropPause):
-			}
-		}
-
+	var (
+		sshConnection ssh.Conn
+		channels      <-chan ssh.NewChannel
+		requests      <-chan *ssh.Request
+		// Set only when the handshake itself failed, so the explanation
+		// below is never applied to a cancelled dial or an unreachable host.
+		handshakeErr error
+	)
+	err := retryPreAuthDrops(dialContext, func() (bool, error) {
 		var tcpDialer net.Dialer
 		tcpConnection, err := tcpDialer.DialContext(dialContext, "tcp", address)
 		if err != nil {
 			// A refused or unroutable address will not fix itself in 1.5s.
-			return nil, nil, nil, fmt.Errorf("reach %s: %w", address, err)
+			return false, fmt.Errorf("reach %s: %w", address, err)
 		}
 
-		sshConnection, channels, requests, err := handshake(
+		sshConnection, channels, requests, err = handshake(
 			tcpConnection, address, clientConfig, handshakeLimit)
-		if err == nil {
-			return sshConnection, channels, requests, nil
+		if err != nil {
+			_ = tcpConnection.Close()
+			handshakeErr = err
+			return droppedBeforeAuth(err), err
 		}
-
-		_ = tcpConnection.Close()
-		lastErr = err
-
-		if !droppedBeforeAuth(err) {
-			break
-		}
+		handshakeErr = nil
+		return false, nil
+	})
+	if err == nil {
+		return sshConnection, channels, requests, nil
 	}
+	if handshakeErr == nil || err != handshakeErr {
+		return nil, nil, nil, err
+	}
+	lastErr := handshakeErr
 
 	// A host the user has not trusted yet is a question for them, not a failure
 	// to explain: hand it up as it is, so the app can recognise it and ask.
@@ -142,4 +146,31 @@ func dialAndHandshake(
 		return nil, nil, nil, unknown
 	}
 	return nil, nil, nil, errors.New(explainHandshakeFailure(address, lastErr))
+}
+
+// retryPreAuthDrops runs attempt until it succeeds, fails in a way attempt says
+// is not worth retrying, or has been tried preAuthDropAttempts times, and
+// returns the last error. Shared by ssh and ssm-ssh, so that both give a
+// server's MaxStartups the same second chance.
+//
+// attempt decides, not this function, because what counts as a drop differs:
+// through an SSM tunnel an EOF can also be AWS refusing, which no retry fixes.
+func retryPreAuthDrops(dialContext context.Context, attempt func() (retry bool, err error)) error {
+	var err error
+	for tries := 1; tries <= preAuthDropAttempts; tries++ {
+		if tries > 1 {
+			select {
+			case <-dialContext.Done():
+				return dialContext.Err()
+			case <-time.After(preAuthDropPause):
+			}
+		}
+
+		var retry bool
+		retry, err = attempt()
+		if err == nil || !retry {
+			return err
+		}
+	}
+	return err
 }

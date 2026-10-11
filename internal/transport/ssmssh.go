@@ -51,21 +51,14 @@ func (ssmSSHDialer) Dial(
 	onOutput func([]byte),
 	onExit func(error),
 ) (Session, error) {
-	tunnel, err := startSSMTunnel(dialContext, config)
-	if err != nil {
-		return nil, err
-	}
-
 	authMethods, releaseAuth, err := sshAuthMethods(config)
 	if err != nil {
-		_ = tunnel.Close()
 		return nil, err
 	}
 	defer releaseAuth()
 
 	hostKeyCallback, err := hostKeyCallbackFor(config.KnownHostsPath)
 	if err != nil {
-		_ = tunnel.Close()
 		return nil, err
 	}
 
@@ -76,18 +69,55 @@ func (ssmSSHDialer) Dial(
 		Timeout:         30 * time.Second,
 	}
 
-	// The instance id is what ssh sees as the host name here, so that is the
-	// name known_hosts is searched for. It has to carry a port: knownhosts
-	// runs SplitHostPort on this too.
-	sshConnection, channels, requests, err := handshake(
-		tunnel, tunnel.address, clientConfig, 30*time.Second)
+	var (
+		tunnel        *processConn
+		sshConnection ssh.Conn
+		channels      <-chan ssh.NewChannel
+		requests      <-chan *ssh.Request
+		// Set only when the handshake itself failed, so a tunnel that would
+		// not start is reported as it is rather than as a handshake failure.
+		handshakeErr error
+		awsComplaint string
+	)
+	// Each attempt needs a tunnel of its own: a dropped one has hung up.
+	err = retryPreAuthDrops(dialContext, func() (bool, error) {
+		opened, err := startSSMTunnel(dialContext, config)
+		if err != nil {
+			handshakeErr = nil
+			return false, err
+		}
+
+		// The instance id is what ssh sees as the host name here, so that is
+		// the name known_hosts is searched for. It has to carry a port:
+		// knownhosts runs SplitHostPort on this too.
+		sshConnection, channels, requests, err = handshake(
+			opened, opened.address, clientConfig, 30*time.Second)
+		if err == nil {
+			tunnel = opened
+			handshakeErr = nil
+			return false, nil
+		}
+
+		// Read after Close: Close waits for the process, and with it for
+		// the goroutine copying stderr, so nothing it said is missed.
+		_ = opened.Close()
+		awsComplaint = strings.TrimSpace(opened.problems.string())
+		handshakeErr = err
+
+		// Through the tunnel an EOF is either sshd turning the connection
+		// away (MaxStartups, worth another try) or AWS refusing the session
+		// (target offline, access denied), which no retry fixes. AWS says
+		// which on stderr.
+		_, awsKnowsWhy := ssmFailureReason(config.Target, awsComplaint)
+		return droppedBeforeAuth(err) && !awsKnowsWhy, err
+	})
 	if err != nil {
+		if handshakeErr == nil || err != handshakeErr {
+			return nil, err
+		}
 		// Whatever AWS printed on stderr is reported alongside the ssh error
 		// rather than instead of it: stderr also carries harmless warnings, and
 		// those must not be mistaken for the reason the handshake failed.
-		awsComplaint := strings.TrimSpace(tunnel.problems.string())
-		_ = tunnel.Close()
-
 		if awsComplaint != "" {
 			return nil, fmt.Errorf(
 				"ssh handshake through the SSM tunnel to %s: %w\n\nthe tunnel also said: %s",
@@ -118,33 +148,52 @@ type tunnelOptions struct {
 	DocumentName string `json:"documentName"`
 }
 
-// startSSMTunnel launches `aws ssm start-session` as a pure byte pipe.
-func startSSMTunnel(dialContext context.Context, config Config) (*processConn, error) {
-	portNumber := config.Port
-	if portNumber == 0 {
-		portNumber = 22
+// tunnelPort is the port the tunnel opens on the instance: the connection's
+// own, or ssh's 22.
+func tunnelPort(config Config) int {
+	if config.Port == 0 {
+		return 22
 	}
+	return config.Port
+}
 
-	documentName := defaultSSHDocument
-	if config.Extra != "" {
-		var options tunnelOptions
-		// A malformed extra should not stop a connection: fall back to the
-		// default rather than failing on something the user cannot see.
-		if err := json.Unmarshal([]byte(config.Extra), &options); err == nil {
-			if options.DocumentName != "" {
-				documentName = options.DocumentName
-			}
-		}
+// tunnelDocumentName is the SSM document that opens the tunnel. The
+// connection's extra may name another one.
+func tunnelDocumentName(extra string) string {
+	if extra == "" {
+		return defaultSSHDocument
 	}
+	var options tunnelOptions
+	// A malformed extra should not stop a connection: fall back to the
+	// default rather than failing on something the user cannot see.
+	if err := json.Unmarshal([]byte(extra), &options); err != nil || options.DocumentName == "" {
+		return defaultSSHDocument
+	}
+	return options.DocumentName
+}
 
-	arguments := append([]string{
+// ssmTunnelArguments is the command line for the byte pipe ssm-ssh runs over.
+// Kept apart from startSSMTunnel so the exact arguments can be tested without
+// running anything.
+func ssmTunnelArguments(config Config) []string {
+	return append([]string{
 		"ssm", "start-session",
 		"--target", config.Target,
-		"--document-name", documentName,
-		"--parameters", fmt.Sprintf("portNumber=%d", portNumber),
+		"--document-name", tunnelDocumentName(config.Extra),
+		"--parameters", fmt.Sprintf("portNumber=%d", tunnelPort(config)),
 	}, awsFlags(effectiveProfile(config), config.AWSRegion)...)
+}
 
-	command := exec.CommandContext(dialContext, "aws", arguments...)
+// tunnelAddress is the name the handshake checks known_hosts for: the
+// instance id, with the port. knownhosts runs SplitHostPort on it, so a bare
+// instance id would fail there.
+func tunnelAddress(config Config) string {
+	return net.JoinHostPort(config.Target, strconv.Itoa(tunnelPort(config)))
+}
+
+// startSSMTunnel launches `aws ssm start-session` as a pure byte pipe.
+func startSSMTunnel(dialContext context.Context, config Config) (*processConn, error) {
+	command := exec.CommandContext(dialContext, "aws", ssmTunnelArguments(config)...)
 	command.Env = awsEnvironment(os.Environ(), config.AWSCredentials, config.AWSRegion)
 
 	// No pty here, unlike the plain ssm kind. This process is carrying the SSH
@@ -173,7 +222,7 @@ func startSSMTunnel(dialContext context.Context, config Config) (*processConn, e
 		writer:   writer,
 		reader:   reader,
 		problems: problems,
-		address:  net.JoinHostPort(config.Target, strconv.Itoa(portNumber)),
+		address:  tunnelAddress(config),
 	}, nil
 }
 

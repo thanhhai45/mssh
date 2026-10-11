@@ -283,6 +283,16 @@ func explainAWSFailure(profile string, output string) string {
 
 // explainSSMFailure turns start-session output into something actionable.
 func explainSSMFailure(target string, output string) string {
+	if reason, known := ssmFailureReason(target, output); known {
+		return reason
+	}
+	return lastLines(output, 3)
+}
+
+// ssmFailureReason explains the start-session failures it recognises. known is
+// false for anything else. Separate from explainSSMFailure because ssm-ssh has
+// to know whether AWS named the problem: if it did, trying again is pointless.
+func ssmFailureReason(target string, output string) (reason string, known bool) {
 	lowered := strings.ToLower(output)
 
 	switch {
@@ -290,20 +300,20 @@ func explainSSMFailure(target string, output string) string {
 		return fmt.Sprintf(
 			"%s is not reachable through Session Manager — check that the "+
 				"instance is running, has the SSM Agent, and has an IAM role "+
-				"with AmazonSSMManagedInstanceCore", target)
+				"with AmazonSSMManagedInstanceCore", target), true
 
 	case strings.Contains(lowered, "accessdenied"):
 		return fmt.Sprintf(
-			"this AWS profile is not allowed to run ssm:StartSession on %s", target)
+			"this AWS profile is not allowed to run ssm:StartSession on %s", target), true
 
 	case strings.Contains(lowered, "invalidinstanceid"):
-		return fmt.Sprintf("%s is not an instance this account can see", target)
+		return fmt.Sprintf("%s is not an instance this account can see", target), true
 	case strings.Contains(lowered, "terminated"),
 		strings.Contains(lowered, "session is not in a valid state"):
 		return fmt.Sprintf(
 			"Session Manager ended the session with %s - most often the idle "+
-				"timeout on the account, which defaults to 20 minutes", target)
+				"timeout on the account, which defaults to 20 minutes", target), true
 	default:
-		return lastLines(output, 3)
+		return "", false
 	}
 }
