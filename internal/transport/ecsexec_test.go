@@ -255,6 +255,9 @@ func TestECSExecLandsInTheNewestHealthyTask(t *testing.T) {
 	}
 	log.waitFor(t, "mssh: task newer · container app")
 	log.waitFor(t, "fake-ssm$ ")
+	if got, want := LandedOn(session), "arn:aws:ecs:ap-southeast-1:111122223333:task/prod/newer"; got != want {
+		t.Errorf("LandedOn = %q, want %q", got, want)
+	}
 	_ = session.Close()
 	if err := log.waitExit(t); err != nil {
 		t.Errorf("closing reported %v", err)

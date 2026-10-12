@@ -66,10 +66,23 @@ func (ecsExecDialer) Dial(
 	command := exec.CommandContext(dialContext, "aws", ecsExecArguments(config, target, chosen)...)
 	command.Env = awsEnvironment(pseudoTerminalEnvironment(), config.AWSCredentials, config.AWSRegion)
 
-	return startPTYProcess(command, size, onOutput, onExit, func(output string) string {
+	session, err := startPTYProcess(command, size, onOutput, onExit, func(output string) string {
 		return explainECSExecFailure(chosen.ID, output)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return ecsExecSession{Session: session, taskARN: chosen.ARN}, nil
 }
+
+// ecsExecSession is a pty session that remembers which task it is in, so the
+// session log can record the task and not just the service.
+type ecsExecSession struct {
+	Session
+	taskARN string
+}
+
+func (session ecsExecSession) LandedOn() string { return session.taskARN }
 
 // ecsExecTarget is the service an ecs-exec connection points at, and what to
 // run once inside.

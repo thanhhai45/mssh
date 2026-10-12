@@ -239,6 +239,7 @@ export namespace store {
 	    endReason: string;
 	    endMessage: string;
 	    reconnectOf: string;
+	    landedOn: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionLogEntry(source);
@@ -262,6 +263,7 @@ export namespace store {
 	        this.endReason = source["endReason"];
 	        this.endMessage = source["endMessage"];
 	        this.reconnectOf = source["reconnectOf"];
+	        this.landedOn = source["landedOn"];
 	    }
 	}
 	export class SessionLogFilter {

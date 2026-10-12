@@ -43,11 +43,15 @@ type SessionLogEntry struct {
 	EndReason            string `json:"endReason"`
 	EndMessage           string `json:"endMessage"`
 	ReconnectOf          string `json:"reconnectOf"`
+	// LandedOn is where the session really went when the target only names a
+	// way to find it: the task ARN for ecs-exec. Empty for every other kind.
+	LandedOn string `json:"landedOn"`
 }
 
 const sessionLogColumns = `id, connection_id, workspace_id, connection_name, ` +
 	`workspace_name, kind, target, username, aws_profile, aws_region, ` +
-	`aws_credentials_source, opened_at, closed_at, end_reason, end_message, reconnect_of`
+	`aws_credentials_source, opened_at, closed_at, end_reason, end_message, reconnect_of, ` +
+	`landed_on`
 
 var sessionLogPlaceholders = strings.TrimSuffix(
 	strings.Repeat("?, ", strings.Count(sessionLogColumns, ",")+1), ", ")
@@ -58,6 +62,7 @@ func sessionLogScanTargets(entry *SessionLogEntry) []any {
 		&entry.WorkspaceName, &entry.Kind, &entry.Target, &entry.Username,
 		&entry.AWSProfile, &entry.AWSRegion, &entry.AWSCredentialsSource, &entry.OpenedAt,
 		&entry.ClosedAt, &entry.EndReason, &entry.EndMessage, &entry.ReconnectOf,
+		&entry.LandedOn,
 	}
 }
 
@@ -67,7 +72,7 @@ func sessionLogValues(entry SessionLogEntry) []any {
 		entry.WorkspaceName, entry.Kind, entry.Target, entry.Username,
 		entry.AWSProfile, entry.AWSRegion, entry.AWSCredentialsSource,
 		entry.OpenedAt, entry.ClosedAt, entry.EndReason, entry.EndMessage,
-		entry.ReconnectOf,
+		entry.ReconnectOf, entry.LandedOn,
 	}
 }
 
@@ -75,7 +80,10 @@ func sessionLogValues(entry SessionLogEntry) []any {
 // as they are right now. The AWS profile and region are the resolved ones -
 // what the session actually used, after the connection-then-workspace rule.
 // Never a secret: only where the credentials came from.
-func (s *Store) RecordSessionOpened(sessionID string, connectionID string) error {
+//
+// landedOn is what the transport resolved the target to, such as the ECS task
+// a service connection went into; empty when the target was the machine.
+func (s *Store) RecordSessionOpened(sessionID string, connectionID string, landedOn string) error {
 	connection, err := s.GetConnection(connectionID)
 	if err != nil {
 		return err
@@ -95,6 +103,7 @@ func (s *Store) RecordSessionOpened(sessionID string, connectionID string) error
 		Kind:           string(connection.Kind),
 		Target:         connection.Target,
 		Username:       connection.Username,
+		LandedOn:       landedOn,
 		OpenedAt:       s.now(),
 	}
 	if connection.Kind.UsesAWS() {

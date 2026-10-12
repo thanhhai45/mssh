@@ -39,6 +39,7 @@ type exportedSession struct {
 	EndReason            string `json:"end_reason"`
 	EndMessage           string `json:"end_message"`
 	ReconnectOf          string `json:"reconnect_of"`
+	LandedOn             string `json:"landed_on"`
 	ConnectionID         string `json:"connection_id"`
 	WorkspaceID          string `json:"workspace_id"`
 }
@@ -47,7 +48,7 @@ var exportHeader = []string{
 	"id", "opened_at", "closed_at", "duration_seconds", "workspace_name",
 	"connection_name", "kind", "target", "username", "aws_profile", "aws_region",
 	"aws_credentials_source", "end_reason", "end_message", "reconnect_of",
-	"connection_id", "workspace_id",
+	"landed_on", "connection_id", "workspace_id",
 }
 
 func (row exportedSession) values() []string {
@@ -55,7 +56,7 @@ func (row exportedSession) values() []string {
 		row.ID, row.OpenedAt, row.ClosedAt, row.DurationSeconds, row.WorkspaceName,
 		row.ConnectionName, row.Kind, row.Target, row.Username, row.AWSProfile, row.AWSRegion,
 		row.AWSCredentialsSource, row.EndReason, row.EndMessage, row.ReconnectOf,
-		row.ConnectionID, row.WorkspaceID,
+		row.LandedOn, row.ConnectionID, row.WorkspaceID,
 	}
 }
 
@@ -87,6 +88,7 @@ func exported(entry SessionLogEntry) exportedSession {
 		EndReason:            entry.EndReason,
 		EndMessage:           entry.EndMessage,
 		ReconnectOf:          entry.ReconnectOf,
+		LandedOn:             entry.LandedOn,
 		ConnectionID:         entry.ConnectionID,
 		WorkspaceID:          entry.WorkspaceID,
 	}

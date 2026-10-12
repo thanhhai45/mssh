@@ -89,7 +89,7 @@ func (manager *Manager) Open(
 
 	// Recorded before anything can learn the session ended, so the row exists
 	// by the time an ending is written to it — whichever goroutine gets there.
-	manager.recordOpened(sessionID, connectionID)
+	manager.recordOpened(sessionID, connectionID, transport.LandedOn(session))
 
 	manager.mutex.Lock()
 	live := manager.sessions[sessionID]
