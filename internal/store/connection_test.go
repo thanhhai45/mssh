@@ -110,6 +110,39 @@ func TestNormalizeConnection(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "ecs-exec takes a service, not an instance id, and tidies its settings",
+			in: ConnectionInput{
+				Name: "api", Kind: KindECSExec, Target: " api ", Username: "leftover",
+				AWSRegion: "ap-southeast-1",
+				Extra:     `{"cluster":" prod ","container":" app ","unknown":1}`,
+			},
+			check: func(t *testing.T, got ConnectionInput) {
+				if got.Target != "api" {
+					t.Errorf("Target = %q, want trimmed", got.Target)
+				}
+				if got.Username != "" {
+					t.Errorf("ssh fields survived: %+v", got)
+				}
+				if got.AWSRegion != "ap-southeast-1" {
+					t.Errorf("AWSRegion = %q, want kept", got.AWSRegion)
+				}
+				if want := `{"cluster":"prod","container":"app"}`; got.Extra != want {
+					t.Errorf("Extra = %s, want %s", got.Extra, want)
+				}
+			},
+		},
+		{
+			name:    "ecs-exec without a cluster is rejected",
+			in:      ConnectionInput{Name: "api", Kind: KindECSExec, Target: "api", Extra: `{"container":"app"}`},
+			wantErr: true,
+		},
+		{
+			name: "ecs-exec rejects a cluster/service pair in the service field",
+			in: ConnectionInput{Name: "api", Kind: KindECSExec, Target: "prod/api",
+				Extra: `{"cluster":"prod"}`},
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {

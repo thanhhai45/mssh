@@ -13,6 +13,7 @@ const (
 	KindSSM       = "ssm"
 	KindSSMSSH    = "ssm-ssh"
 	KindSSHConfig = "ssh-config"
+	KindECSExec   = "ecs-exec"
 )
 
 const (
@@ -33,7 +34,7 @@ type Size struct {
 // no inheritance rules and no keychain access happen inside this package.
 type Config struct {
 	Kind       string
-	Target     string // Target is a hostname or IP for KindSSH, an instance id for the SSM kinds.
+	Target     string // Target is a hostname or IP for KindSSH, an instance id for the SSM kinds, a service for KindECSExec.
 	Port       int
 	Username   string
 	AuthMethod string
@@ -110,6 +111,8 @@ func For(kind string) (Dialer, error) {
 		return ssmSSHDialer{}, nil
 	case KindSSHConfig:
 		return sshConfigDialer{}, nil
+	case KindECSExec:
+		return ecsExecDialer{}, nil
 	default:
 		return nil, fmt.Errorf("unknown connection kind %q", kind)
 	}

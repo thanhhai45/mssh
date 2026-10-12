@@ -205,6 +205,10 @@ func runFakeAWS(arguments []string) int {
 		return fakeTunnel()
 	case command == "ssm start-session":
 		return fakeInteractiveSession()
+	case command == "ecs list-tasks", command == "ecs describe-tasks":
+		return fakeECSLookup(command)
+	case command == "ecs execute-command":
+		return fakeInteractiveSession()
 	}
 	_, _ = fmt.Fprintln(os.Stderr, "fake aws: unexpected arguments", arguments)
 	return 2

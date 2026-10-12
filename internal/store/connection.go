@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -18,6 +19,7 @@ const (
 	KindSSM       ConnectionKind = "ssm"
 	KindSSMSSH    ConnectionKind = "ssm-ssh"
 	KindSSHConfig ConnectionKind = "ssh-config"
+	KindECSExec   ConnectionKind = "ecs-exec"
 )
 
 type AuthMethod string
@@ -30,7 +32,7 @@ const (
 
 func (k ConnectionKind) Valid() bool {
 	switch k {
-	case KindSSH, KindSSM, KindSSMSSH, KindSSHConfig:
+	case KindSSH, KindSSM, KindSSMSSH, KindSSHConfig, KindECSExec:
 		return true
 	default:
 		return false
@@ -42,7 +44,44 @@ func (k ConnectionKind) UsesSSH() bool {
 }
 
 func (k ConnectionKind) UsesAWS() bool {
+	return k == KindSSM || k == KindSSMSSH || k == KindECSExec
+}
+
+// UsesInstanceID reports whether the target is an EC2 or managed instance id.
+// ecs-exec uses AWS too, but its target is a service: the task it lands in is
+// looked up again on every connect, because a deploy replaces them all.
+func (k ConnectionKind) UsesInstanceID() bool {
 	return k == KindSSM || k == KindSSMSSH
+}
+
+// ECSExecExtra is what an ecs-exec connection keeps in its extra column. The
+// service is the target; everything else that names the container is here.
+type ECSExecExtra struct {
+	Cluster string `json:"cluster"`
+	// Container is needed only when the task runs more than one.
+	Container string `json:"container,omitempty"`
+	// Command is what runs inside the container. Empty means /bin/sh.
+	Command string `json:"command,omitempty"`
+}
+
+// normalizeECSExecExtra checks an ecs-exec extra column and writes it back in
+// one canonical form, so that what is stored is never half-filled JSON.
+func normalizeECSExecExtra(extra string) (string, error) {
+	var parsed ECSExecExtra
+	if err := json.Unmarshal([]byte(extra), &parsed); err != nil {
+		return extra, fmt.Errorf("ecs-exec settings are not valid JSON: %w", err)
+	}
+	parsed.Cluster = strings.TrimSpace(parsed.Cluster)
+	parsed.Container = strings.TrimSpace(parsed.Container)
+	parsed.Command = strings.TrimSpace(parsed.Command)
+	if parsed.Cluster == "" {
+		return extra, fmt.Errorf("ecs-exec connections need a cluster")
+	}
+	encoded, err := json.Marshal(parsed)
+	if err != nil {
+		return extra, err
+	}
+	return string(encoded), nil
 }
 
 // NeedsPassword reports whether opening a session for this connection requires
@@ -169,13 +208,24 @@ func (input ConnectionInput) normalize() (ConnectionInput, error) {
 		out.AWSProfile = strings.TrimSpace(out.AWSProfile)
 		out.AWSRegion = strings.TrimSpace(out.AWSRegion)
 
-		if !instanceIDPattern.MatchString(out.Target) {
+		if out.Kind.UsesInstanceID() && !instanceIDPattern.MatchString(out.Target) {
 			return out, fmt.Errorf(
 				"%s needs an instance id like i-0abc12345, got %q", out.Kind, out.Target)
 		}
 	} else {
 		out.AWSProfile = ""
 		out.AWSRegion = ""
+	}
+
+	if out.Kind == KindECSExec {
+		if strings.ContainsAny(out.Target, " \t/") {
+			return out, fmt.Errorf("ecs-exec needs a service name like api, got %q", out.Target)
+		}
+		extra, err := normalizeECSExecExtra(out.Extra)
+		if err != nil {
+			return out, err
+		}
+		out.Extra = extra
 	}
 
 	return out, nil

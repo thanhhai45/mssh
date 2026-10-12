@@ -28,7 +28,7 @@ export type Transfer = Omit<files.Transfer, 'sessionId' | 'direction' | 'state'>
 export type AWSCredentialsSource = 'cli' | 'stored';
 
 /** Go sends these as plain strings. These are the sets it actually accepts. */
-export type ConnectionKind = 'ssh' | 'ssm' | 'ssm-ssh' | 'ssh-config';
+export type ConnectionKind = 'ssh' | 'ssm' | 'ssm-ssh' | 'ssh-config' | 'ecs-exec';
 export type AuthMethod = 'agent' | 'key' | 'password';
 
 export type SessionState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -56,7 +56,7 @@ export const PASSWORD_REQUIRED = 'password required';
  */
 export const HOST_KEY_QUESTION = 'mssh:host-key:';
 
-export const CONNECTION_KINDS: ConnectionKind[] = ['ssh', 'ssm', 'ssm-ssh', 'ssh-config'];
+export const CONNECTION_KINDS: ConnectionKind[] = ['ssh', 'ssm', 'ssm-ssh', 'ssh-config', 'ecs-exec'];
 export const AUTH_METHODS: AuthMethod[] = ['agent', 'key', 'password'];
 
 export const KIND_META: Record<ConnectionKind, {label: string; hint: string}> = {
@@ -75,7 +75,11 @@ export const KIND_META: Record<ConnectionKind, {label: string; hint: string}> = 
   'ssh-config': {
     label: 'System SSH',
     hint: 'Use a Host alias from ~/.ssh/config - ssh handles the rest',
-  }
+  },
+  'ecs-exec': {
+    label: 'ECS container',
+    hint: 'A shell in the newest healthy task of a service, through ECS Exec',
+  },
 };
 
 export const AUTH_META: Record<AuthMethod, {label: string; hint: string}> = {
@@ -111,7 +115,29 @@ export function usesSSH(kind: string): boolean {
 
 /** Mirrors ConnectionKind.UsesAWS in Go: needs an AWS profile and region. */
 export function usesAWS(kind: string): boolean {
-  return kind === 'ssm' || kind === 'ssm-ssh';
+  return kind === 'ssm' || kind === 'ssm-ssh' || kind === 'ecs-exec';
+}
+
+/** What an ecs-exec connection keeps in `extra`. Mirrors store.ECSExecExtra. */
+export type ECSExecExtra = {
+  cluster: string;
+  container: string;
+  command: string;
+};
+
+/** Reads `extra` as ECS settings. Anything unreadable comes back blank. */
+export function parseECSExecExtra(extra: string): ECSExecExtra {
+  const blank: ECSExecExtra = {cluster: '', container: '', command: ''};
+  try {
+    const parsed = JSON.parse(extra || '{}');
+    return {
+      cluster: typeof parsed.cluster === 'string' ? parsed.cluster : '',
+      container: typeof parsed.container === 'string' ? parsed.container : '',
+      command: typeof parsed.command === 'string' ? parsed.command : '',
+    };
+  } catch {
+    return blank;
+  }
 }
 
 /** One-line subtitle, the way the sidebar shows it. */
@@ -123,6 +149,10 @@ export function describeConnection(c: Connection): string {
       return c.awsRegion ? `${c.target} · ${c.awsRegion}` : c.target;
     case 'ssm-ssh':
       return `${c.username}@${c.target}`;
+    case 'ecs-exec': {
+      const ecs = parseECSExecExtra(c.extra);
+      return `${ecs.cluster}/${c.target}${ecs.container ? ` · ${ecs.container}` : ''}`;
+    }
     default:
       return `${c.username}@${c.target}:${c.port}`;
   }

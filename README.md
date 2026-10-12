@@ -108,6 +108,21 @@ than to a config file. **Direct SSH** for anything reachable over the network,
 **AWS SSM** for EC2 instances with no open port and no public IP, and **SSH over
 SSM** when you want that tunnel *and* your own account rather than `ssm-user`.
 
+### ECS containers
+
+An **ECS container** connection names a cluster and a service, not a task. Every
+connect looks the service up again and opens `aws ecs execute-command` in its
+newest task that can take a session: running, with ECS Exec on and its agent up.
+A `HEALTHY` task wins over one whose health is still `UNKNOWN`, so a rolling
+deploy does not drop you into a task that has not passed its first check, and an
+`UNHEALTHY` task is never chosen. The terminal's first line says which task you
+landed in.
+
+It needs the same AWS CLI and Session Manager plugin as the SSM kinds, plus ECS
+Exec turned on for the service (`--enable-execute-command`) and the
+`ssmmessages:*` permissions on the task role. Set the container when the task
+runs sidecars, and the command when the image has no `/bin/sh`.
+
 ---
 
 ## Requirements

@@ -1,4 +1,4 @@
-import {Cloud, FileKey, KeyRound, Waypoints, type LucideIcon} from 'lucide-react'
+import {Cloud, Container, FileKey, KeyRound, Waypoints, type LucideIcon} from 'lucide-react'
 
 import {isConnectionKind, type ConnectionKind} from '@/lib/api'
 
@@ -12,12 +12,14 @@ import {isConnectionKind, type ConnectionKind} from '@/lib/api'
  * - ssm          a cloud, and no key at all
  * - ssm-ssh      a path through the cloud to your own account
  * - ssh-config   a file that already knows all of this
+ * - ecs-exec     a container, whichever task it happens to be in today
  */
 const KIND_ICONS: Record<ConnectionKind, LucideIcon> = {
     'ssh': KeyRound,
     'ssm': Cloud,
     'ssm-ssh': Waypoints,
     'ssh-config': FileKey,
+    'ecs-exec': Container,
 }
 
 /**
