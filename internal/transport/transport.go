@@ -69,7 +69,8 @@ type Session interface {
 
 // FileBrowser is a Session that can also move files, over the SSH connection
 // it already holds: no second login, no second tunnel. The ssh and ssm-ssh
-// kinds are; ssm and ssh-config run a program and hold no connection to share.
+// kinds hold that connection themselves; ssh-config shares the one its ssh
+// command holds. ssm runs a program with no SSH connection to share.
 //
 // A separate interface rather than a method on Session, so that a session
 // without files does not have to pretend to have them.

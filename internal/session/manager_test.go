@@ -269,7 +269,7 @@ func TestSFTPOfASessionThatIsNotOpen(t *testing.T) {
 	}
 }
 
-// An ssm or ssh-config session runs a program and has no files to offer.
+// An ssm session runs a program and has no files to offer.
 func TestSFTPOfASessionWithoutFiles(t *testing.T) {
 	manager := newTestManager(&fakeDialer{})
 	open(t, manager, "session1", "connect1")

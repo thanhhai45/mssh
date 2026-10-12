@@ -18,10 +18,10 @@ import {Input} from '@/components/ui/input'
 import {Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle} from '@/components/ui/sheet'
 import {
     api,
+    browsesFiles,
     errorMessage,
     kindMeta,
     onTransferChanged,
-    usesSSH,
     type RemoteEntry,
     type RemoteListing,
     type Transfer,
@@ -72,10 +72,11 @@ export function FilesDrawer({open, onOpenChange, onClosed, connectionName, kind,
                     <SheetDescription>{connectionName}</SheetDescription>
                 </SheetHeader>
 
-                {!usesSSH(kind) ? (
+                {!browsesFiles(kind) ? (
                     <Unavailable>
                         Files travel over an SSH connection. {kindMeta(kind).label} connections run a
-                        program instead of holding one open, so there is nothing to browse them over yet.
+                        program instead of holding one open, so there is nothing to browse them over.
+                        An SSH over SSM connection to the same instance can.
                     </Unavailable>
                 ) : !sessionId ? (
                     <Unavailable>

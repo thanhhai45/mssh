@@ -109,6 +109,15 @@ export function usesSSH(kind: string): boolean {
   return kind === 'ssh' || kind === 'ssm-ssh';
 }
 
+/**
+ * Whether a session of this kind has an SSH connection to carry files: its
+ * own for ssh and ssm-ssh, the one its ssh command shares for ssh-config.
+ * ssm drives a program and has none.
+ */
+export function browsesFiles(kind: string): boolean {
+  return kind === 'ssh' || kind === 'ssm-ssh' || kind === 'ssh-config';
+}
+
 /** Mirrors ConnectionKind.UsesAWS in Go: needs an AWS profile and region. */
 export function usesAWS(kind: string): boolean {
   return kind === 'ssm' || kind === 'ssm-ssh';
