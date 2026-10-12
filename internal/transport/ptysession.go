@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/creack/pty"
 )
@@ -44,14 +45,26 @@ func startPTYProcess(
 	// handler explain what went wrong.
 	recentOutput := &tailBuffer{limit: 4096}
 
-	go forwardStream(terminal, func(chunk []byte) {
-		recentOutput.append(chunk)
-		onOutput(chunk)
-	})
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		forwardStream(terminal, func(chunk []byte) {
+			recentOutput.append(chunk)
+			onOutput(chunk)
+		})
+	}()
 
 	go func() {
 		waitErr := command.Wait()
 		userClosed := session.closedOnPurpose.Load()
+		// The process can be gone with its last words still in the pty.
+		// Closing the pty now would throw them away, and they are usually the
+		// error message. A grandchild still holding the terminal open would
+		// keep the stream from ever ending, hence the limit.
+		select {
+		case <-drained:
+		case <-time.After(ptyDrainLimit):
+		}
 		_ = session.Close()
 
 		if userClosed {
@@ -69,6 +82,10 @@ func startPTYProcess(
 
 	return session, nil
 }
+
+// ptyDrainLimit is how long an exited process's output may take to finish
+// arriving before its terminal is closed anyway.
+const ptyDrainLimit = 500 * time.Millisecond
 
 // The plain ssh kind never had the problem because it names the terminal itself
 // in RequestPty. This is the same decision, one layer down.
