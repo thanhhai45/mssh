@@ -1,12 +1,9 @@
 # mssh
 
-<img width="1042" height="820" alt="5" src="https://github.com/user-attachments/assets/c4ba5205-137b-4e20-ba1b-585318b4646d" />
-<img width="1043" height="806" alt="4" src="https://github.com/user-attachments/assets/79e60a83-3f6b-4dd4-a09e-c9e779861bc4" />
-<img width="1031" height="811" alt="3" src="https://github.com/user-attachments/assets/fbf7d3ba-8442-4e34-9af4-4bd88b55ce17" />
-<img width="1038" height="811" alt="1" src="https://github.com/user-attachments/assets/59c4c3f0-b25c-428f-ae1a-cc1a7b9b2de4" />
+![mssh connected to an EC2 instance over SSH through AWS Session Manager](.github/assets/terminal.png)
 
-
-**A desktop app for the servers you keep having to reach.**
+**A desktop app for the servers you keep having to reach** — including the ones
+you can't SSH into.
 
 If you look after more than a handful of machines, the day looks like this: an
 `~/.ssh/config` you half remember, a scrollback you lose every time you close a
@@ -24,9 +21,10 @@ It reaches machines four different ways, including AWS Session Manager, so
 instances with no open port and no public IP work the same as a VPS you rent by
 the month.
 
-Nothing leaves your computer. There is no account and no sync: connections go in
-a local SQLite file, passwords go in your operating system's credential store,
-and AWS credentials are never touched at all — the AWS CLI keeps those.
+Nothing leaves your computer. There is no account and no sync: connections,
+passwords and session history go in a local SQLite file readable by you alone.
+AWS credentials stay with the AWS CLI — unless you choose to keep a key pair on a
+workspace, and even then they are handed to the CLI, never sent anywhere.
 
 Built with [Wails](https://wails.io): a Go backend and a React interface, in one
 binary.
@@ -37,20 +35,33 @@ binary.
 
 ### Download a build
 
-Grab the latest `mssh-<version>-macos-universal.zip` from the
-[Releases page](https://github.com/thanhhai45/mssh/releases), unzip it, and drag
-`mssh.app` into `/Applications`.
+Grab the latest `mssh-<version>-macos-universal.dmg` (or `.zip`) from the
+[Releases page](https://github.com/thanhhai45/mssh/releases), open it, and drag
+`mssh.app` into `/Applications`. One universal build runs on Apple silicon and
+Intel.
 
 **macOS will refuse to open it the first time.** The app is not signed with an
 Apple Developer certificate, so Gatekeeper blocks it:
 
 > "mssh" cannot be opened because Apple cannot check it for malicious software.
 
-Clear the quarantine flag once:
+Right-click the app, choose **Open**, and confirm — you only have to do this once.
+Or clear the quarantine flag from a terminal:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/mssh.app
 ```
+
+### Build from source
+
+```bash
+git clone git@github.com:thanhhai45/mssh.git && cd mssh
+wails build
+```
+
+The application is written to `build/bin/mssh.app`. See
+[Requirements](#requirements) for what building needs.
+
 ---
 
 ## Features
@@ -63,15 +74,28 @@ xattr -dr com.apple.quarantine /Applications/mssh.app
 - **Four ways to reach a machine** — a `Host` alias from your existing
   `~/.ssh/config`, direct SSH, AWS Session Manager, or SSH tunnelled through
   Session Manager.
-- **Sessions that survive navigation** — switch to another connection and back;
-  your scrollback, working directory and running `top` are all still there.
+- **Several terminals per machine** — open tabs with `⌘T`, close them with `⌘W`.
+  Switch to another connection and back: scrollback, working directory and a
+  running `top` are all still there.
+- **Files over the same connection** — `⌘E` opens a drawer to browse, download
+  and upload over SFTP on the terminal's own SSH connection, through Session
+  Manager too. Transfers show progress, can be cancelled, keep going while you
+  move around the app, and never leave a half-written file under the real name.
+- **Session history** — every session with its machine, workspace, AWS profile,
+  duration and how it ended. Filter it, export it as CSV or JSON. The record stays
+  when a machine is renamed or deleted.
+- **Host keys you can trust** — the first time you reach a machine, mssh shows its
+  fingerprint and asks, the way `ssh` does — even through an SSM tunnel. A key
+  that has *changed* is refused, never offered.
 - **Real terminal** — a full pty with `TERM=xterm-256color`, so `vim`, `htop`,
   `clear` and colours all work, and the remote shell follows the window when you
   resize it.
 - **Search the scrollback** — `⌘F` finds text anywhere in the session, with every
   match highlighted and a running count.
-- **Appearance you choose** — five terminal colour presets, font family, size,
-  line height and cursor style, applied to live sessions without reconnecting.
+- **Appearance you choose** — nine terminal themes (GitHub, iTerm2, VS Code,
+  Dracula, Nord, Solarized, Gruvbox, Tokyo Night) or *Auto*, which follows macOS
+  between light and dark; font family, size, line height and cursor style, all
+  applied to live sessions without reconnecting.
 - **Local SQLite database** — everything lives on your machine. No account, no
   sync, no telemetry.
 
@@ -80,8 +104,15 @@ xattr -dr com.apple.quarantine /Applications/mssh.app
 | Key | Does |
 | --- | --- |
 | `⌘P` | Jump to any connection by name, host or workspace. |
+| `⌘T` | New terminal tab for this machine. |
+| `⌘W` | Close the current tab (the last one stays). |
+| `⌘E` | Open or close the Files drawer. |
 | `⌘F` | Find in the terminal. `⏎` next match, `⇧⏎` previous, `Esc` close. |
 | `⌘K` | Clear the terminal, iTerm2 style — local only, the remote shell is not told. |
+
+| | |
+|---|---|
+| ![Files drawer](.github/assets/files.png) | ![Session history](.github/assets/history.png) |
 
 ---
 
@@ -94,9 +125,8 @@ xattr -dr com.apple.quarantine /Applications/mssh.app
 | Needs on your machine | the `ssh` command | nothing extra | AWS CLI + Session Manager plugin | AWS CLI + plugin + an SSH key |
 | Needs on the server | whatever your config implies | an open SSH port | SSM Agent and an IAM role | SSM Agent, IAM role, and `sshd` |
 | You land as | whatever `~/.ssh/config` says | the user you configure | `ssm-user` | the user you configure |
-| Unknown host key | `ssh` asks in the terminal | recorded with `ssh` first | n/a | recorded with `ssh` first |
-| Works with `scp` later | yes | yes | no | yes |
-| Files drawer | yes, over `ssh`'s own connection | yes | no | yes |
+| Unknown host key | `ssh` asks in the terminal | mssh asks, with the fingerprint | n/a | mssh asks, with the fingerprint |
+| Files drawer (SFTP) | yes, over `ssh`'s own connection | yes | no | yes |
 
 **System SSH** is the one to start with if you already have an `~/.ssh/config`.
 You give mssh a `Host` alias and nothing else; OpenSSH supplies the user, the
@@ -122,9 +152,8 @@ SSM** when you want that tunnel *and* your own account rather than `ssm-user`.
 
 ### Always
 
-- **macOS** (developed and tested here) or **Linux**.
-  Windows is untested: the SSM kinds need a pseudo-terminal, which behaves
-  differently there.
+- **macOS** — developed, tested and released here. Windows and Linux installers
+  are planned; the app compiles for both, but neither is tested yet.
 
 Nothing else. Direct SSH connections work out of the box — the SSH client is
 compiled into the binary.
@@ -140,8 +169,9 @@ The app checks for both before it tries to connect, and tells you which one is
 missing rather than failing silently. It also reports an expired SSO session and
 prints the `aws sso login` command you need.
 
-Your AWS credentials stay entirely with the AWS CLI. mssh only passes it a
-profile and region name.
+By default your AWS credentials stay entirely with the AWS CLI, and mssh only
+passes it a profile and region name. A workspace can instead keep its own key
+pair — see [Security](#security).
 
 ### Only to build from source
 
@@ -152,24 +182,6 @@ profile and region name.
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
-
----
-
-## Install
-
-### Build from source
-
-```bash
-git clone git@github.com:thanhhai45/mssh.git && cd mssh
-wails build
-```
-
-The application is written to `build/bin/mssh.app`. Move it into
-`/Applications` if you want it in Launchpad.
-
-macOS will refuse to open it the first time because it is not signed by a
-registered developer. Right-click the app, choose **Open**, then confirm — you
-only have to do this once.
 
 ---
 
@@ -190,59 +202,32 @@ app updates.
 
 ---
 
-## ⚠️ Connecting to a server for the first time
-
-**This is the one thing that will surprise you** — and the **System SSH** kind
-avoids it entirely. There, `ssh` asks you in the terminal, the way it always
-does, and typing `yes` is the whole procedure. The rest of this section applies
-to the other three kinds, where mssh checks host keys itself and has no prompt
-of its own yet.
-
-If you see this:
-
-```
-203.0.113.10 has never been connected to from this machine.
-Run `ssh 203.0.113.10` once, check the fingerprint it shows, and accept it
-— that records the key in /Users/you/.ssh/known_hosts, which mssh reads too
-```
-
-it means that machine has never been connected to from this computer.
+## Connecting to a server for the first time
 
 mssh verifies every server's host key against `~/.ssh/known_hosts` — the same
-file the `ssh` command uses. If a machine is not in that file, there is nothing
-to check the key against, and the connection is refused rather than trusted
-blindly.
+file the `ssh` command uses. The first time you reach a machine there is nothing
+to check its key against, so mssh shows you the key and asks, the way `ssh`
+does:
 
-### The fix
+> **First connection to 203.0.113.10**
+> ssh-ed25519 `SHA256:AbCd…`
 
-Connect once with the `ssh` command, so you can see and accept the fingerprint:
-
-```bash
-ssh -p 22 youruser@203.0.113.10
-```
-
-You will be asked:
-
-```
-The authenticity of host '203.0.113.10' can't be established.
-ED25519 key fingerprint is SHA256:AbCd...
-Are you sure you want to continue connecting (yes/no/[fingerprint])?
-```
-
-Type `yes`, log in, then `exit`. The key is now recorded, and mssh will connect.
-
-For **SSH over SSM**, the host name is the instance id, so add this to
-`~/.ssh/config` first and then connect once the same way:
-
-```
-Host i-* mi-*
-    ProxyCommand aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p
-    User ec2-user
-```
+If you can, compare it with the server's own before trusting it. On the server,
+this prints it:
 
 ```bash
-ssh ec2-user@i-0abc123456789
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 ```
+
+For an EC2 instance, open it once with the **AWS SSM** kind and run that there.
+For **SSH over SSM** the name shown is the instance id, so the fingerprint is the
+only thing you have to go on — it is worth checking.
+
+Then choose **Trust and connect**. The key is written to `~/.ssh/known_hosts`
+and you will not be asked again.
+
+The **System SSH** kind never shows this dialog: there, `ssh` asks in the
+terminal, as it always does.
 
 ### 🚨 If the key has *changed*
 
@@ -252,7 +237,7 @@ A different message means something else entirely:
 the host key for 203.0.113.10 has CHANGED since it was recorded
 ```
 
-Do **not** clear the entry to make this go away. It means one of two things:
+mssh never offers to trust a changed key. It means one of two things:
 
 1. The server was rebuilt or reinstalled — normal, but confirm it with whoever
    runs the machine before continuing.
@@ -284,8 +269,11 @@ then connect again and accept the new fingerprint.
 - **Deleting a connection deletes its password**, and deleting a workspace
   deletes its AWS keys and every password inside it. The database does this
   itself, through foreign keys.
-- **Host keys are always verified.** There is no "connect anyway" option, by
+- **Host keys are always verified.** A new machine is a question with its
+  fingerprint; a changed key is refused. There is no "connect anyway" option, by
   design.
+- **The session history never holds a secret.** It records which machine, when,
+  for how long, and where the credentials came from — never a password or a key.
 - **AWS uses the CLI's own configuration by default.** SSO refresh, MFA and
   assume-role are all done by the AWS CLI in a separate process. A workspace set
   to use stored keys hands them to `aws` through its environment, never its
@@ -314,7 +302,7 @@ injected there, so `window.go` will be undefined.
 ### Tests and checks
 
 ```bash
-go test ./internal/...   # store, secrets and transport
+go test ./internal/...   # store, secrets, session, transport and files
 go vet ./internal/...
 gofmt -l .
 ```
@@ -367,11 +355,12 @@ wails generate module
 main.go                  wiring: open the database, start Wails
 app.go                   the bridge to the frontend; thin by design
 
-internal/store/          SQLite: workspaces, connections, settings
+internal/store/          SQLite: workspaces, connections, secrets, settings, session log
     migrations/          numbered .sql files, applied in order
-internal/secrets/        passwords, in the OS credential store
-internal/transport/      one Dialer per connection kind
+internal/secrets/        the password vault contract, and the one-time move off the Keychain
+internal/transport/      one Dialer per connection kind; SFTP on SSH sessions
 internal/session/        live sessions, kept alive independently of the UI
+internal/files/          directory listing and file transfers over SFTP
 
 frontend/src/
     lib/api.ts                 the only module that imports the Wails bindings
@@ -386,7 +375,7 @@ frontend/src/
 
 | Message | What to do |
 |---|---|
-| `... has never been connected to from this machine` | Connect once with `ssh` — see the section above |
+| `... has never been connected to from this machine` | Check the fingerprint and choose *Trust and connect* — see the section above |
 | `the host key ... has CHANGED` | Stop and verify with the server's owner |
 | `refused the connection before the SSH handshake started` | sshd's `MaxStartups` turned you away because its queue of unauthenticated logins was full — on a public server that queue is mostly bots. mssh retries three times on its own; if it still fails, raise `MaxStartups` in `/etc/ssh/sshd_config` or put fail2ban in front of the port |
 | `refused the credentials` | Check the username character for character, and whether the server allows password logins at all |
@@ -400,3 +389,4 @@ frontend/src/
 | `... is not reachable through Session Manager` | Check the instance is running, has the SSM Agent, and has an IAM role with `AmazonSSMManagedInstanceCore` |
 | `this AWS profile is not allowed to run ssm:StartSession` | Add that permission to the role or user |
 | `connection ... is already open` | The session is still running; disconnect it first |
+| `this connection runs a program rather than holding an SSH connection, so it cannot browse files` | The Files drawer needs System SSH, Direct SSH or SSH over SSM. AWS SSM connections (and System SSH on Windows) run a program instead |
