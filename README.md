@@ -96,12 +96,20 @@ xattr -dr com.apple.quarantine /Applications/mssh.app
 | You land as | whatever `~/.ssh/config` says | the user you configure | `ssm-user` | the user you configure |
 | Unknown host key | `ssh` asks in the terminal | recorded with `ssh` first | n/a | recorded with `ssh` first |
 | Works with `scp` later | yes | yes | no | yes |
+| Files drawer | yes, over `ssh`'s own connection | yes | no | yes |
 
 **System SSH** is the one to start with if you already have an `~/.ssh/config`.
 You give mssh a `Host` alias and nothing else; OpenSSH supplies the user, the
 key, `ProxyCommand`, jump hosts and host-key checking, exactly as it does on the
 command line. Anything you can already `ssh` into works here with no further
 setup.
+
+Its Files drawer rides on the same login. mssh starts `ssh` as a connection
+master (`ControlMaster`, with a private socket and a short `ControlPersist`), and
+the file client is a second `ssh -s sftp` through that socket, so there is no
+second password, 2FA prompt or `ProxyCommand` tunnel. The options on the command
+line outrank any `ControlMaster` settings in your config for these sessions only.
+Windows' `ssh` cannot share a connection, so there the drawer is not available.
 
 The other three exist for when you would rather describe the machine to mssh
 than to a config file. **Direct SSH** for anything reachable over the network,

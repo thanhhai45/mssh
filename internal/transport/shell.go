@@ -125,17 +125,9 @@ type sshSession struct {
 	standardInput io.WriteCloser
 	closeOnce     sync.Once //// goroutine that notices the remote shell ended.
 
-	// The file client: one SFTP channel per session, opened the first time
-	// something needs it and shared by every listing and transfer after that.
-	sftpMutex  sync.Mutex
-	sftpClient *sftp.Client
-	// sftpClosed is set by Close, so a client that finishes opening after it
-	// is closed at once instead of outliving the connection it runs on.
-	sftpClosed bool
+	// files is the session's SFTP client, sharing the connection above.
+	files sharedSFTP
 }
-
-// errSessionClosed is what SFTP answers once the session has been closed.
-var errSessionClosed = errors.New("the session is closed")
 
 // openSFTP starts the sftp subsystem on an SSH connection that is already
 // open. A variable so that tests can supply a client of their own.
@@ -145,50 +137,15 @@ var openSFTP = func(connection *ssh.Client) (*sftp.Client, error) {
 
 // SFTP returns the session's file client, opening it on the first call.
 func (session *sshSession) SFTP() (*sftp.Client, error) {
-	session.sftpMutex.Lock()
-	closed, existing := session.sftpClosed, session.sftpClient
-	session.sftpMutex.Unlock()
-	if closed {
-		return nil, errSessionClosed
-	}
-	if existing != nil {
-		return existing, nil
-	}
-
-	// Opened without the lock: it waits on the network, and Close must never
-	// queue behind it - on a dead connection, closing is what makes it return.
-	opened, err := openSFTP(session.client)
-	if err != nil {
-		return nil, fmt.Errorf("open sftp: %w", err)
-	}
-
-	session.sftpMutex.Lock()
-	defer session.sftpMutex.Unlock()
-	switch {
-	case session.sftpClosed:
-		_ = opened.Close()
-		return nil, errSessionClosed
-	case session.sftpClient != nil:
-		// Two first calls raced. Keep the one already handed out.
-		_ = opened.Close()
-		return session.sftpClient, nil
-	default:
-		session.sftpClient = opened
-		return opened, nil
-	}
+	return session.files.get(func() (*sftp.Client, error) {
+		return openSFTP(session.client)
+	})
 }
 
 // closeSFTP closes the file client, if one was opened, and refuses to open
 // another. Part of Close.
 func (session *sshSession) closeSFTP() {
-	session.sftpMutex.Lock()
-	session.sftpClosed = true
-	files := session.sftpClient
-	session.sftpMutex.Unlock()
-
-	if files != nil {
-		_ = files.Close()
-	}
+	session.files.close()
 }
 
 func (session *sshSession) Write(payload []byte) (int, error) {
