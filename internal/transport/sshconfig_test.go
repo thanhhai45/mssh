@@ -122,7 +122,12 @@ func TestSharedConnectionPathSkipsLongDirectories(t *testing.T) {
 	if err := os.MkdirAll(long, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	short := t.TempDir()
+	// Not t.TempDir: on macOS it is itself too long to hold a socket.
+	short, err := os.MkdirTemp("/tmp", "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(short) })
 
 	directory, socket := sharedConnectionPath([]string{long, short})
 	if !strings.HasPrefix(directory, short) || filepath.Dir(socket) != directory {
