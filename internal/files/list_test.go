@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -40,6 +41,17 @@ func testServer(t *testing.T, root string) *sftp.Client {
 		_ = client.Close()
 	})
 	return client
+}
+
+// serverPath is the name testServer knows a directory on this machine by.
+// SFTP paths are Unix paths, so on Unix that is the path itself. pkg/sftp's
+// server on Windows puts the drive after a slash: C:\Users\me is /C:/Users/me.
+func serverPath(local string) string {
+	slashed := filepath.ToSlash(local)
+	if runtime.GOOS == "windows" {
+		return "/" + slashed
+	}
+	return slashed
 }
 
 // tree makes files and directories under root. A name ending in / is a
@@ -83,17 +95,17 @@ func TestListStartsAtHomeWithDirectoriesFirst(t *testing.T) {
 
 	// t.TempDir can sit under a symlink (/var → /private/var on macOS); the
 	// server reports the path it was given, so compare against that.
-	if listing.Path != filepath.ToSlash(root) {
+	if listing.Path != serverPath(root) {
 		t.Errorf("path = %q, want the home directory %q", listing.Path, root)
 	}
 	if got, want := names(listing), "app logs Alpha.txt beta.txt zeta.txt"; got != want {
 		t.Errorf("order = %q, want %q", got, want)
 	}
-	if listing.Parent != filepath.ToSlash(filepath.Dir(root)) {
+	if listing.Parent != serverPath(filepath.Dir(root)) {
 		t.Errorf("parent = %q", listing.Parent)
 	}
 	for _, entry := range listing.Entries {
-		if entry.Path != filepath.ToSlash(filepath.Join(root, entry.Name)) {
+		if entry.Path != serverPath(filepath.Join(root, entry.Name)) {
 			t.Errorf("%s has path %q; paths must be absolute", entry.Name, entry.Path)
 		}
 	}
@@ -108,7 +120,7 @@ func TestListResolvesRelativePathsFromHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if listing.Path != filepath.ToSlash(filepath.Join(root, "app")) {
+	if listing.Path != serverPath(filepath.Join(root, "app")) {
 		t.Errorf("path = %q", listing.Path)
 	}
 	if got := names(listing); got != "config run.sh" {

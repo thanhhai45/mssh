@@ -77,7 +77,7 @@ func TestDownload(t *testing.T) {
 	transfers, events := newTransfers()
 
 	destination := filepath.Join(local, "backup.tar")
-	transfers.Download(client, "s1", filepath.ToSlash(filepath.Join(remote, "backup.tar")), destination)
+	transfers.Download(client, "s1", serverPath(filepath.Join(remote, "backup.tar")), destination)
 	transfers.Wait()
 
 	final := events.last()
@@ -106,13 +106,13 @@ func TestUploadReplacesAnExistingFile(t *testing.T) {
 	client := testServer(t, remote)
 	transfers, events := newTransfers()
 
-	started := transfers.Upload(client, "s1", source, filepath.ToSlash(remote))
+	started := transfers.Upload(client, "s1", source, serverPath(remote))
 	transfers.Wait()
 
 	if final := events.last(); final.State != TransferDone {
 		t.Fatalf("final report = %+v", final)
 	}
-	if started.Destination != filepath.ToSlash(filepath.Join(remote, "app.conf")) {
+	if started.Destination != serverPath(filepath.Join(remote, "app.conf")) {
 		t.Errorf("destination = %q", started.Destination)
 	}
 	got, err := os.ReadFile(filepath.Join(remote, "app.conf"))
@@ -140,7 +140,7 @@ func TestCancelledDownloadLeavesNothing(t *testing.T) {
 	}
 
 	destination := filepath.Join(local, "big.bin")
-	transfers.Download(client, "s1", filepath.ToSlash(filepath.Join(remote, "big.bin")), destination)
+	transfers.Download(client, "s1", serverPath(filepath.Join(remote, "big.bin")), destination)
 	transfers.Wait()
 
 	if final := events.last(); final.State != TransferCancelled {
@@ -173,7 +173,7 @@ func TestCancelledUploadLeavesTheServerAsItWas(t *testing.T) {
 		}
 	}
 
-	transfers.Upload(client, "s1", source, filepath.ToSlash(remote))
+	transfers.Upload(client, "s1", source, serverPath(remote))
 	transfers.Wait()
 
 	if final := events.last(); final.State != TransferCancelled {
@@ -205,7 +205,7 @@ func TestFailuresSayWhatAndLeaveNothing(t *testing.T) {
 	if err := os.WriteFile(source, []byte("hello"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	transfers.Upload(client, "s1", source, filepath.ToSlash(filepath.Join(remote, "missing-dir")))
+	transfers.Upload(client, "s1", source, serverPath(filepath.Join(remote, "missing-dir")))
 	transfers.Wait()
 	if final := events.last(); final.State != TransferFailed {
 		t.Errorf("upload into a missing directory: %+v", final)
@@ -223,7 +223,7 @@ func TestListShowsEveryTransferNewestFirst(t *testing.T) {
 	client := testServer(t, remote)
 	transfers, _ := newTransfers()
 
-	first := transfers.Download(client, "s1", filepath.ToSlash(filepath.Join(remote, "a.txt")), filepath.Join(local, "a.txt"))
+	first := transfers.Download(client, "s1", serverPath(filepath.Join(remote, "a.txt")), filepath.Join(local, "a.txt"))
 	transfers.Wait()
 
 	listed := transfers.List()
@@ -285,8 +285,8 @@ func TestCancelSessionStopsOnlyThatSession(t *testing.T) {
 	transfers.cleanupWait = 50 * time.Millisecond
 	reached, release := holdAtFirstProgress(events, "s1", "s2")
 
-	one := transfers.Download(client, "s1", filepath.ToSlash(filepath.Join(remote, "one.bin")), filepath.Join(local, "one.bin"))
-	two := transfers.Download(client, "s2", filepath.ToSlash(filepath.Join(remote, "two.bin")), filepath.Join(local, "two.bin"))
+	one := transfers.Download(client, "s1", serverPath(filepath.Join(remote, "one.bin")), filepath.Join(local, "one.bin"))
+	two := transfers.Download(client, "s2", serverPath(filepath.Join(remote, "two.bin")), filepath.Join(local, "two.bin"))
 	<-reached
 	<-reached
 
@@ -325,7 +325,7 @@ func TestCancelWaitsForTheCleanup(t *testing.T) {
 	transfers, events := newTransfers()
 	reached, release := holdAtFirstProgress(events, "s1")
 
-	started := transfers.Upload(client, "s1", source, filepath.ToSlash(remote))
+	started := transfers.Upload(client, "s1", source, serverPath(remote))
 	<-reached
 	// CancelSession in two steps, so the transfer is released only after it
 	// has been cancelled: the wait then has real cleanup to wait for.

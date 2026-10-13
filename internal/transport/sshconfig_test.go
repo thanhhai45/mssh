@@ -118,6 +118,9 @@ func TestControlPathIsEscaped(t *testing.T) {
 // ssh will not start at all with a socket path too long for the system, so
 // a long temporary directory gives way to the next one.
 func TestSharedConnectionPathSkipsLongDirectories(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows' ssh cannot share a connection, so there is no socket to place")
+	}
 	long := filepath.Join(t.TempDir(), strings.Repeat("d", maxControlPathLength))
 	if err := os.MkdirAll(long, 0o700); err != nil {
 		t.Fatal(err)

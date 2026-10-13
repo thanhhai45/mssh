@@ -155,6 +155,7 @@ type fakeAWS struct {
 // useFakeAWS puts the fake first on PATH and returns the files it reports in.
 func useFakeAWS(t *testing.T, fake fakeAWS, withPlugin bool) (argsLog string, pidFile string) {
 	t.Helper()
+	skipWithoutUnixShell(t)
 	// Preflight would otherwise adopt the login shell's PATH, and with it a
 	// real aws or session-manager-plugin. Marking that done keeps the test
 	// to the PATH it sets.
