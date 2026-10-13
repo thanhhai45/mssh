@@ -186,12 +186,18 @@ func droppedBeforeAuth(err error) bool {
 	if err == nil {
 		return false
 	}
+	// Being asked about a host key means the version exchange and the key
+	// exchange both happened: the server did not turn this connection away.
+	var unknown *UnknownHostKeyError
+	if errors.As(err, &unknown) {
+		return false
+	}
 	if errors.Is(err, io.EOF) || connectionReset(err) {
 		return true
 	}
 
 	lowered := strings.ToLower(err.Error())
-	return strings.Contains(lowered, "eof") ||
+	return strings.HasSuffix(lowered, "eof") ||
 		strings.Contains(lowered, "connection reset by peer") ||
 		strings.Contains(lowered, "broken pipe") ||
 		strings.Contains(lowered, "exceeded maxstartups")
