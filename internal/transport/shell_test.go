@@ -1,11 +1,15 @@
 package transport
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func TestExplainHandshakeFailure(t *testing.T) {
@@ -85,6 +89,12 @@ func TestDroppedBeforeAuth(t *testing.T) {
 		errors.New("ssh: no common algorithm for key exchange"),
 		errors.New("knownhosts: key mismatch"),
 		errors.New("read tcp: i/o timeout"),
+		errors.New("the host key for geofence.example.com has CHANGED since it was recorded"),
+		// The fingerprint of this key has "EOF" in it: SHA256:U2EOf2Cq14XTGurf...
+		fmt.Errorf("ssh: handshake failed: %w", &UnknownHostKeyError{
+			Host: "i-0test:22",
+			Key:  keyFromSeed(t, bytes.Repeat([]byte{0xbe, 0x02, 0x00}, 11)[:32]),
+		}),
 	}
 	for _, err := range notRetryable {
 		if droppedBeforeAuth(err) {
@@ -101,4 +111,15 @@ func TestPortOf(t *testing.T) {
 	if got := portOf("10.0.0.9"); got != "22" {
 		t.Errorf("portOf without a port = %q, want the 22 fallback", got)
 	}
+}
+
+// keyFromSeed is the same public key every run, for a test that needs a
+// particular fingerprint.
+func keyFromSeed(t *testing.T, seed []byte) ssh.PublicKey {
+	t.Helper()
+	key, err := ssh.NewPublicKey(ed25519.NewKeyFromSeed(seed).Public())
+	if err != nil {
+		t.Fatalf("public key: %v", err)
+	}
+	return key
 }

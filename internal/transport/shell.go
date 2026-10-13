@@ -179,16 +179,25 @@ func (session *sshSession) Close() error {
 //
 // x/crypto reports all of this as "EOF", because it is looking for a line
 // beginning "SSH-" and sshd sends the words "Exceeded MaxStartups" instead.
+// When this machine's greeting is still unread as sshd hangs up, the system
+// reports a reset instead - and Windows words that differently in every
+// language, so a reset is recognised by its number.
 func droppedBeforeAuth(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, io.EOF) {
+	// Being asked about a host key means the version exchange and the key
+	// exchange both happened: the server did not turn this connection away.
+	var unknown *UnknownHostKeyError
+	if errors.As(err, &unknown) {
+		return false
+	}
+	if errors.Is(err, io.EOF) || connectionReset(err) {
 		return true
 	}
 
 	lowered := strings.ToLower(err.Error())
-	return strings.Contains(lowered, "eof") ||
+	return strings.HasSuffix(lowered, "eof") ||
 		strings.Contains(lowered, "connection reset by peer") ||
 		strings.Contains(lowered, "broken pipe") ||
 		strings.Contains(lowered, "exceeded maxstartups")

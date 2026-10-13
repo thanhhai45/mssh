@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -55,6 +56,16 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// skipWithoutUnixShell skips a test whose fakes are #!/bin/sh scripts. Windows
+// chooses how to run a file by its extension: it reads no #! line, and
+// exec.LookPath passes over a file named plain "aws" to find the real aws.exe.
+func skipWithoutUnixShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("needs /bin/sh: the fake shell and the fake aws are shell scripts")
+	}
+}
+
 // fakeShell points SHELL at that script and hands it exactly the bytes to
 // print.
 //
@@ -64,6 +75,7 @@ func TestMain(m *testing.M) {
 // would then be measuring the machine rather than the code.
 func fakeShell(t *testing.T, output []byte) {
 	t.Helper()
+	skipWithoutUnixShell(t)
 
 	fixture := filepath.Join(t.TempDir(), "output")
 	if err := os.WriteFile(fixture, output, 0o600); err != nil {
