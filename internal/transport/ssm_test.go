@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -584,7 +583,7 @@ func TestSSMSSHThroughTheTunnel(t *testing.T) {
 	_ = session.Close()
 
 	// Closing the session ends the tunnel process too.
-	if err := syscall.Kill(pid, 0); err == nil {
+	if processRunning(pid) {
 		t.Errorf("the tunnel process %d is still running after Close", pid)
 	}
 }
@@ -633,7 +632,7 @@ func processAlive(t *testing.T, pidFile string) bool {
 		t.Fatalf("tunnel pid: %v", err)
 	}
 	pid, _ := strconv.Atoi(string(content))
-	return syscall.Kill(pid, 0) == nil
+	return processRunning(pid)
 }
 
 // A tunnel that never answers must not hang the dial: the handshake deadline
