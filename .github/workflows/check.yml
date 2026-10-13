@@ -9,13 +9,41 @@ on:
 
 jobs:
   go:
-    runs-on: macos-latest
+    # One run per system. Compiling for Windows on a Mac proves the code
+    # builds there; only running it there proves it works.
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-22.04, not latest: Linux releases will be built on 22.04
+        # for its older glibc so the tests run where the build will.
+        os: [macos-latest, ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Windows would use PowerShell. Every runner has bash(Windows through Git for Windows)
+        # and one shell means each step is written once.
+        shell: bash
     steps:
+      - name: Keep line endings as committed
+        # Git on Windows turns \n into \r\n on checkout, gofmt would then call
+        # every file unformatted, and .errcheck-excludes would carry a stray \r
+        # on each line. Must run before checkout.
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v5
 
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l internal *.go)
+          if [ -n "$unformatted" ]; then
+            echo "Not formatted with gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: Vet
         run: go vet ./internal/...
@@ -26,9 +54,9 @@ jobs:
         run: go test ./internal/...
 
       - name: errcheck
-        run: |
-          go install github.com/kisielk/errcheck@latest
-          "$(go env GOPATH)/bin/errcheck" -exclude .errcheck-excludes ./internal/...
+        # go run rather than go install: no need to know where GOPATH/bin is,
+        # which on Windows is a C:\ path bash would have to be told about.
+        run: go run github.com/kisielk/errcheck@latest -exclude .errcheck-excludes ./internal/...
 
   frontend:
     runs-on: ubuntu-latest
