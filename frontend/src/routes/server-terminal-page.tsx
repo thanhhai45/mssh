@@ -23,6 +23,7 @@ import {
 import {accentTextClass} from '@/lib/colors'
 import {KindIcon} from '@/components/kind-icon'
 import {useSessionStatus} from '@/lib/session-status-store'
+import {isShortcut, label} from '@/lib/shortcuts'
 import {useTabs} from '@/lib/tabs-store'
 import {useTransfers} from '@/lib/transfers-store'
 import {
@@ -92,34 +93,35 @@ export function ServerTerminalPage() {
         openTab(connectionId)
     }, [connectionId, tabCount, openTab])
 
-    // ⌘F, ⌘E, ⌘T and ⌘W live here, not in the terminal module, because opening a
-    // panel or a tab is React's business — a terminal has no idea either
-    // exists. The keys reach this listener untouched: xterm leaves
-    // ⌘-combinations alone on macOS, which is also why ⌘C and ⌘V still work
+    // Find, files, new tab and close tab live here, not in the terminal module,
+    // because opening a panel or a tab is React's business — a terminal has no
+    // idea either exists. The keys reach this listener untouched: xterm makes
+    // nothing for the shell out of ⌘-combinations on macOS or Ctrl+Shift ones
+    // elsewhere, and lets them go — which is also why ⌘C and ⌘V still work
     // inside it.
     //
     // Declared after the values it depends on: a dependency array is evaluated
     // during render, so naming a const above its own declaration throws.
     useEffect(() => {
         function handleKeyDown(event: KeyboardEvent) {
-            if (event.metaKey && event.key === 'f') {
+            if (isShortcut(event, 'find')) {
                 event.preventDefault()
                 setFinding(true)
                 return
             }
-            if (event.metaKey && event.key === 'e') {
+            if (isShortcut(event, 'files')) {
                 event.preventDefault()
                 setBrowsing((open) => !open)
                 return
             }
             if (!connectionId) return
 
-            if (event.metaKey && event.key === 't') {
+            if (isShortcut(event, 'newTab')) {
                 event.preventDefault()
                 openTab(connectionId)
                 return
             }
-            if (event.metaKey && event.key === 'w') {
+            if (isShortcut(event, 'closeTab')) {
                 event.preventDefault()
                 // The last tab stays. Closing it would only make the effect
                 // above open an empty one straight back.
@@ -263,7 +265,7 @@ export function ServerTerminalPage() {
                     <Button
                         variant="ghost"
                         onClick={() => setBrowsing(true)}
-                        title="Files (⌘E)"
+                        title={`Files (${label('files')})`}
                     >
                         <FolderOpen/>
                         Files
@@ -274,7 +276,7 @@ export function ServerTerminalPage() {
                     <Button
                         variant="ghost"
                         onClick={() => setFinding(true)}
-                        title="Find in terminal (⌘F)"
+                        title={`Find in terminal (${label('find')})`}
                     >
                         <Search/>
                         Find
@@ -282,7 +284,7 @@ export function ServerTerminalPage() {
                     <Button
                         variant="ghost"
                         onClick={() => activeTab && clearTerminal(activeTab.id)}
-                        title="Clear the terminal (⌘K)"
+                        title={`Clear the terminal (${label('clear')})`}
                     >
                         <Eraser/>
                         Clear
@@ -374,7 +376,7 @@ export function ServerTerminalPage() {
                     type="button"
                     onClick={() => openTab(connection.id)}
                     className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent"
-                    title="New terminal (⌘T)"
+                    title={`New terminal (${label('newTab')})`}
                 >
                     <Plus className="size-4"/>
                 </button>

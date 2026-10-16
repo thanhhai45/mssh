@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import {describeConnection, sessionDotClass, type Connection, type Workspace} from '@/lib/api'
 import {accentTextClass} from '@/lib/colors'
+import {isShortcut} from '@/lib/shortcuts'
 import {KindIcon} from '@/components/kind-icon'
 import {useTabs} from '@/lib/tabs-store'
 import {cn} from '@/lib/utils'
@@ -39,7 +40,7 @@ export function CommandPalette() {
     // open. Re-registering one listener per toggle costs nothing.
     useEffect(() => {
         function handleKeyDown(event: KeyboardEvent) {
-            if (event.metaKey && event.key === 'p') {
+            if (isShortcut(event, 'palette')) {
                 event.preventDefault()
                 if (open) {
                     setOpen(false)

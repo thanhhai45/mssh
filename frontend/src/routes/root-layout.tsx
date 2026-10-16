@@ -4,6 +4,7 @@ import {AppSidebar} from '@/components/app-sidebar'
 import {CommandPalette} from '@/components/command-palette'
 import {HeaderBreadcrumb} from '@/components/header-breadcrumb'
 import {SidebarInset, SidebarProvider, SidebarTrigger} from '@/components/ui/sidebar'
+import {label} from '@/lib/shortcuts'
 
 export function RootLayout() {
     return (
@@ -16,7 +17,7 @@ export function RootLayout() {
                     <SidebarTrigger className="-ml-1"/>
                     <HeaderBreadcrumb/>
                     <kbd className="ml-auto hidden shrink-0 rounded border bg-muted px-1.5 py-0.5 font-sans text-[11px] text-muted-foreground sm:inline">
-                        ⌘P
+                        {label('palette')}
                     </kbd>
                 </header>
                 <div className="flex flex-1 flex-col gap-4 p-6">
