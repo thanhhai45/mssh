@@ -3,8 +3,11 @@ import {SearchAddon, type ISearchResultChangeEvent} from '@xterm/addon-search'
 import {Terminal, type ITerminalOptions} from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
+import {ClipboardGetText, ClipboardSetText} from '../../wailsjs/runtime/runtime'
+
 import {api, onSessionOutput} from '@/lib/api'
 import type {SessionId, TabId} from '@/lib/ids'
+import {isMac, isShortcut} from '@/lib/shortcuts'
 
 /**
  * Terminals live here, at module scope, outside React.
@@ -81,13 +84,27 @@ function create(tabId: TabId): TerminalEntry {
     })
 
     terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type !== 'keydown') return true
+        if (event.type !== 'keydown') return true
       
-      if (event.metaKey && event.key === 'k') {
-        clearTerminal(tabId)
-        return false
-      }
-      return true
+        if (isShortcut(event, 'clear')) {
+            clearTerminal(tabId)
+            return false
+        }
+        // A Mac copies and pastes with ⌘C and ⌘V, and the system handles both.
+        // Elsewhere Ctrl+C must stay the interrupt it is in every shell, so the
+        // terminal takes Ctrl+Shift+C and Ctrl+Shift+V instead.
+        if (!isMac && isShortcut(event, 'copy')) {
+            event.preventDefault()
+            if (terminal.hasSelection()) void ClipboardSetText(terminal.getSelection())
+            return false
+        }
+        if (!isMac && isShortcut(event, 'paste')) {
+            // Without this the web view pastes too, and the text arrives twice.
+            event.preventDefault()
+            void ClipboardGetText().then((text) => terminal.paste(text))
+            return false
+        }
+        return true
     })
 
     const entry: TerminalEntry = {
