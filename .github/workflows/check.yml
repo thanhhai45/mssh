@@ -61,8 +61,17 @@ jobs:
   linux-build:
     # The whole app, built the way the Linux release will be. On Linux a Wails
     # app reaches GTK and WebKitGTK through cgo, so vet and test passing say
-    # nothing about whether it builds.
-    runs-on: ubuntu-22.04
+    # nothing about whether it builds. Once per architecture, each on its own
+    # kind of machine: cgo does not cross-compile without a cross toolchain.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: amd64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
 
@@ -76,6 +85,16 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Version
+        # From wails.json, the one place it is written down, for every later
+        # step. An assignment on a line of its own, so that a failing jq stops
+        # the job: inside "export X=$(...)" or an argument the failure is lost
+        # and the packages go out as 0.0.0. -e makes a missing key a failure
+        # rather than the word "null".
+        run: |
+          version=$(jq -er .info.productVersion wails.json)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
       - name: GTK and WebKitGTK headers
         run: |
           sudo apt-get update
@@ -88,7 +107,7 @@ jobs:
       - name: Build
         # webkit2_41: Wails looks for WebKitGTK 4.0 unless told otherwise, and
         # Ubuntu 24.04 no longer ships 4.0 at all. 22.04 has both.
-        run: wails build -platform linux/amd64 -tags webkit2_41
+        run: wails build -platform linux/${{ matrix.arch }} -tags webkit2_41
 
       - name: What the binary needs
         # The newest glibc symbol is the oldest system it can run on.
@@ -101,24 +120,28 @@ jobs:
         run: desktop-file-validate build/linux/mssh.desktop
 
       - name: .deb and .rpm
-        # One nfpm.yaml makes both. The version comes from wails.json, the on
-        # place it is written down.
+        # One nfpm.yaml makes both, reading VERSION and ARCH from here.
+        env:
+          ARCH: ${{ matrix.arch }}
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
-          export VERSION=$(jp -r .info.productVersion wails.json)
-          nfpm package --config build/linux/nfpm.yaml --packager deb --target build/bin
-          nfpm package --config build/linux/nfpm.yaml --packager rpm --target build/bin
+          nfpm package --config build/linux/nfpm.yaml --packager deb --target build/bin/
+          nfpm package --config build/linux/nfpm.yaml --packager rpm --target build/bin/
 
       - name: AppImage
-        run: bash build/linux/appimage.sh "$(jq -r .info.productionVersion wails.json)"
+        # x86_64 only for now: the script fetches x86_64 tools and copies
+        # WebKit's helpers from the x86_64 library directory.
+        if: matrix.arch == 'amd64'
+        run: bash build/linux/appimage.sh "$VERSION"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-packages
+          name: linux-packages-${{ matrix.arch }}
           path: |
             build/bin/*.deb
             build/bin/*.rpm
             build/bin/*.AppImage
+
 
   linux-install:
     # Each package installed where people will install it, by the system's own
@@ -144,7 +167,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: linux-packages
+          name: linux-packages-amd64
 
       - name: Install
         run: ${{ matrix.install }}
@@ -186,7 +209,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: linux-packages
+          name: linux-packages-amd64
 
       - name: A virtual X server
         run: ${{ matrix.prepare }}
