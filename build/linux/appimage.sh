@@ -46,8 +46,12 @@ cp -r "$helpers/WebKitNetworkProcess" "$helpers/WebKitWebProcess" \
     "$helpers/injected-bundle" "$appdir$helpers/"
 
 # 2. mssh and every library it needs, and GTK's own data and modules.
+#    --deploy-deps-only treats the helpers as linuxdeploy treats mssh - their
+#    libraries in, their rpath pointed at them - without moving them out of
+#    the directory WebKit looks in.
 linuxdeploy --appdir "$appdir" \
     --executable build/bin/mssh \
+    --deploy-deps-only "$appdir$helpers" \
     --desktop-file build/linux/mssh.desktop \
     --icon-file build/linux/mssh.png \
     --custom-apprun build/linux/AppRun \

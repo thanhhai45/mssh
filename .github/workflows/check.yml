@@ -159,21 +159,22 @@ jobs:
     # The AppImage started where WebKitGTK is not installed at all: the window
     # comes up under a virtual X server, and WebKit's helper processes - the
     # part that needed patching - have to start with it. The container gets
-    # what every desktop has and an AppImage deliberately leaves to it (fonts,
-    # X11, OpenGL - see AppImage's excludelist), and nothing more.
+    # exactly what linuxdeploy leaves to the system (fonts, X11 and Wayland,
+    # OpenGL, the C and C++ runtimes; "Skipping deployment of blacklisted
+    # library" in the build log) - what any desktop already has - and no more.
     needs: linux-build
     strategy:
       fail-fast: false
       matrix:
         include:
           - image: ubuntu:24.04
-            prepare: apt-get update && apt-get install -y xvfb xauth procps libfontconfig1 libfreetype6 libharfbuzz0b libx11-6 libgl1 libegl1 fonts-dejavu-core
+            prepare: apt-get update && apt-get install -y xvfb xauth procps fonts-dejavu-core libfontconfig1 libfreetype6 libharfbuzz0b libfribidi0 libx11-6 libx11-xcb1 libxcb1 libwayland-client0 libegl1 libgl1 libgbm1 libdrm2 libexpat1 libuuid1 libgmp10 libgpg-error0 libcom-err2 libstdc++6 zlib1g
           - image: ubuntu:latest
-            prepare: apt-get update && apt-get install -y xvfb xauth procps libfontconfig1 libfreetype6 libharfbuzz0b libx11-6 libgl1 libegl1 fonts-dejavu-core
+            prepare: apt-get update && apt-get install -y xvfb xauth procps fonts-dejavu-core libfontconfig1 libfreetype6 libharfbuzz0b libfribidi0 libx11-6 libx11-xcb1 libxcb1 libwayland-client0 libegl1 libgl1 libgbm1 libdrm2 libexpat1 libuuid1 libgmp10 libgpg-error0 libcom-err2 libstdc++6 zlib1g
           - image: fedora:latest
-            prepare: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth procps-ng fontconfig freetype harfbuzz libX11 mesa-libGL mesa-libEGL dejavu-sans-fonts
+            prepare: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth procps-ng dejavu-sans-fonts fontconfig freetype harfbuzz fribidi libX11 libX11-xcb libxcb libwayland-client mesa-libEGL mesa-libGL mesa-libgbm libdrm expat libuuid gmp libgpg-error libcom_err libstdc++ zlib-ng-compat
           - image: archlinux:latest
-            prepare: pacman -Sy --noconfirm xorg-server-xvfb xorg-xauth procps-ng fontconfig freetype2 harfbuzz libx11 mesa ttf-dejavu
+            prepare: pacman -Sy --noconfirm xorg-server-xvfb xorg-xauth procps-ng ttf-dejavu fontconfig freetype2 harfbuzz fribidi libx11 libxcb wayland mesa libglvnd libdrm expat util-linux-libs gmp libgpg-error e2fsprogs gcc-libs zlib
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
     env:
@@ -189,11 +190,19 @@ jobs:
         run: ${{ matrix.prepare }}
 
       - name: Libraries the AppImage expects from the system
+        # Each file inside the AppImage that cannot find a library, and which.
+        # GTK's modules show up here harmlessly: they are only ever loaded into
+        # a process that has GTK already. mssh and WebKit's helpers must not.
         run: |
           chmod +x ./mssh-*.AppImage
           ./mssh-*.AppImage --appimage-extract > /dev/null
-          find squashfs-root -type f \( -name '*.so*' -o -perm -u+x \) \
-            -exec sh -c 'ldd "$1" 2>/dev/null' _ {} \; | grep 'not found' | sort -u || true
+          find squashfs-root -type f \( -name '*.so*' -o -perm -u+x \) | while read -r file; do
+            missing=$(ldd "$file" 2>/dev/null | grep 'not found' || true)
+            if [ -n "$missing" ]; then
+              echo "$file"
+              echo "$missing"
+            fi
+          done
 
       - name: Starts, and WebKit's helpers start with it
         run: |
