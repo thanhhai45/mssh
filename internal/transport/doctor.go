@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -87,17 +88,34 @@ func extendPathWithCommonDirectories() {
 func requireAWSTools() error {
 	ensureUsableEnvironment()
 
+	awsAdvice, pluginAdvice := installAdvice(runtime.GOOS)
 	if _, err := exec.LookPath("aws"); err != nil {
-		return fmt.Errorf(
-			"the AWS CLI is not installed, or not on PATH — install it with " +
-				"`brew install awscli`")
+		return fmt.Errorf("the AWS CLI is not installed, or not on PATH - %s", awsAdvice)
 	}
 	if _, err := exec.LookPath("session-manager-plugin"); err != nil {
-		return fmt.Errorf(
-			"the Session Manager plugin is not installed — install it with " +
-				"`brew install --cask session-manager-plugin`")
+		return fmt.Errorf("the Session Manager plugin is not installed - %s", pluginAdvice)
 	}
 	return nil
+}
+
+// installAdvice says how to install the AWS CLI and the Session Manager plugin
+// on goos.
+//
+// Linux has no one package manager, and the awscli in Ubuntu's apt is verions
+// 1, which has no `aws sso login`: AWS's own installers are the answer there.
+func installAdvice(goos string) (aws string, plugin string) {
+	const pluginPage = "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"
+	switch goos {
+	case "darwin":
+		return "install it with `brew install awscli`",
+			"install it with `brew install --cask session-manager-plugin`"
+	case "windows":
+		return "install it with `winget install Amazon.AWSCLI`",
+			"install it from " + pluginPage
+	default:
+		return "install version 2 from https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html",
+			"install the .deb or .rpm from " + pluginPage
+	}
 }
 
 // CheckSSMTools reports whether this machine has what the SSM kinds need. It
