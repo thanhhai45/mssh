@@ -109,12 +109,16 @@ jobs:
           nfpm package --config build/linux/nfpm.yaml --packager deb --target build/bin
           nfpm package --config build/linux/nfpm.yaml --packager rpm --target build/bin
 
+      - name: AppImage
+        run: bash build/linux/appimage.sh "$(jq -r .info.productionVersion wails.json)"
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-packages
           path: |
             build/bin/*.deb
             build/bin/*.rpm
+            build/bin/*.AppImage
 
   linux-install:
     # Each package installed where people will install it, by the system's own
@@ -125,6 +129,8 @@ jobs:
       matrix:
         include:
           - image: ubuntu:24.04
+            install: apt-get update && apt-get install -y ./mssh_*.deb
+          - image: ubuntu:latest
             install: apt-get update && apt-get install -y ./mssh_*.deb
           - image: fedora:latest
             install: dnf install -y ./mssh-*.rpm
@@ -149,6 +155,46 @@ jobs:
           if ldd /usr/bin/mssh | grep 'not found'; then
             exit 1
           fi
+  appimage-run:
+    # The AppImage started where WebKitGTK is not installed at all: the window
+    # comes up under a virtual X server, and WebKit's helper processes - the
+    # part that need patching - have to satrt with it.
+    needs: linux-build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:24.04
+            prepare: apt-get update && apt-get install -y xvfb xauth procps
+          - image: ubuntu:latest
+            prepare: apt-get update && apt-get install -y xvfb xauth procps
+          - image: fedora:latest
+            prepare: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth procps-ng
+          - image: archlinux:latest
+            prepare: pacman -Sy --noconfirm xorg-server-xvfb xorg-xauth procps-ng
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      # No FUSE in a container: unpack to /tmp and run from there instead.
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+
+      - name: A virtual X server
+        run: ${{ matrix.prepare }}
+
+      - name: Starts, and WebKit's helpers start with it
+        run: |
+          chmod +x ./mssh-*.AppImage
+          xvfb-run -a ./mssh-*.AppImage > mssh.log 2>&1 &
+          sleep 20
+          ps -eo args | grep -E 'mssh|WebKit' | grep -v grep || true
+          cat mssh.log
+          pgrep -x mssh > /dev/null
+          pgrep -f WebKitWebProcess > /dev/null
 
   frontend:
     runs-on: ubuntu-latest

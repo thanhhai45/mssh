@@ -1,0 +1,7 @@
+#!/bin/sh
+# Starts mssh from inside the AppImage's usr/. The bundled WebKit has been
+# patched to find its helper programs at "././lib/...", a path relative to the
+# working directory - so the working directory has to be this one.
+here="$(dirname "$(readlink -f "$0")")"
+cd "$here/usr" || exit 1
+exec "$here/usr/bin/mssh" "$@"
