@@ -158,20 +158,22 @@ jobs:
   appimage-run:
     # The AppImage started where WebKitGTK is not installed at all: the window
     # comes up under a virtual X server, and WebKit's helper processes - the
-    # part that need patching - have to satrt with it.
+    # part that needed patching - have to start with it. The container gets
+    # what every desktop has and an AppImage deliberately leaves to it (fonts,
+    # X11, OpenGL - see AppImage's excludelist), and nothing more.
     needs: linux-build
     strategy:
       fail-fast: false
       matrix:
         include:
           - image: ubuntu:24.04
-            prepare: apt-get update && apt-get install -y xvfb xauth procps
+            prepare: apt-get update && apt-get install -y xvfb xauth procps libfontconfig1 libfreetype6 libharfbuzz0b libx11-6 libgl1 libegl1 fonts-dejavu-core
           - image: ubuntu:latest
-            prepare: apt-get update && apt-get install -y xvfb xauth procps
+            prepare: apt-get update && apt-get install -y xvfb xauth procps libfontconfig1 libfreetype6 libharfbuzz0b libx11-6 libgl1 libegl1 fonts-dejavu-core
           - image: fedora:latest
-            prepare: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth procps-ng
+            prepare: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth procps-ng fontconfig freetype harfbuzz libX11 mesa-libGL mesa-libEGL dejavu-sans-fonts
           - image: archlinux:latest
-            prepare: pacman -Sy --noconfirm xorg-server-xvfb xorg-xauth procps-ng
+            prepare: pacman -Sy --noconfirm xorg-server-xvfb xorg-xauth procps-ng fontconfig freetype2 harfbuzz libx11 mesa ttf-dejavu
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
     env:
@@ -185,6 +187,13 @@ jobs:
 
       - name: A virtual X server
         run: ${{ matrix.prepare }}
+
+      - name: Libraries the AppImage expects from the system
+        run: |
+          chmod +x ./mssh-*.AppImage
+          ./mssh-*.AppImage --appimage-extract > /dev/null
+          find squashfs-root -type f \( -name '*.so*' -o -perm -u+x \) \
+            -exec sh -c 'ldd "$1" 2>/dev/null' _ {} \; | grep 'not found' | sort -u || true
 
       - name: Starts, and WebKit's helpers start with it
         run: |
