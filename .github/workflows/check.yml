@@ -79,7 +79,7 @@ jobs:
       - name: GTK and WebKitGTK headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils
 
       - name: Install Wails
         # The same version as go.mod, so the CLI and the library agree.
@@ -96,6 +96,59 @@ jobs:
           file build/bin/mssh
           ldd build/bin/mssh | grep -E 'gtk|webkit'
           objdump -T build/bin/mssh | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+
+      - name: Desktop entry
+        run: desktop-file-validate build/linux/mssh.desktop
+
+      - name: .deb and .rpm
+        # One nfpm.yaml makes both. The version comes from wails.json, the on
+        # place it is written down.
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+          export VERSION=$(jp -r .info.productVersion wails.json)
+          nfpm package --config build/linux/nfpm.yaml --packager deb --target build/bin
+          nfpm package --config build/linux/nfpm.yaml --packager rpm --target build/bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            build/bin/*.deb
+            build/bin/*.rpm
+
+  linux-install:
+    # Each package installed where people will install it, by the system's own
+    # package manager: what it declares must be enough for the binary to start.
+    needs: linux-build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:24.04
+            install: apt-get update && apt-get install -y ./mssh_*.deb
+          - image: fedora:latest
+            install: dnf install -y ./mssh-*.rpm
+          - image: opensuse/tumbleweed
+            install: zypper --non-interactive install --allow-unsigned-rpm ./mssh-*.rpm
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    env:
+      # Ubuntu would otherwise stop to ask for a time zone while installing.
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+
+      - name: Install
+        run: ${{ matrix.install }}
+
+      - name: Every library found
+        run: |
+          ls -l /usr/bin/mssh /usr/share/applications/mssh.desktop
+          if ldd /usr/bin/mssh | grep 'not found'; then
+            exit 1
+          fi
 
   frontend:
     runs-on: ubuntu-latest
