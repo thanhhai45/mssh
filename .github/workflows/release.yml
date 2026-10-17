@@ -8,7 +8,23 @@ on:
 permissions:
   contents: write
 jobs:
+  version:
+    # The macOS files are named after the tag, the Linux packages after
+    # wails.json. Both have to say the same thing before anything is built.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: The tag matches wails.json
+        run: |
+          expected="v$(jq -r .info.productVersion wails.json)"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "The tag is $GITHUB_REF_NAME but wails.json says $expected."
+            exit 1
+          fi
+
   macos:
+    needs: version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -22,7 +38,8 @@ jobs:
           node-version: '22'
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        # The same version as go.mod, so the CLI and the library agree.
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
       - name: Test
         # Not ./... — package main cannot compile until wails build has created
@@ -31,7 +48,7 @@ jobs:
 
       - name: Build
         run: wails build -platform darwin/universal -clean
-      
+
       - name: Verify the binary is universal
         run: |
           lipo -info build/bin/mssh.app/Contents/MacOS/mssh | grep -q "x86_64 arm64" \
@@ -46,8 +63,69 @@ jobs:
         # The same script used by hand — see docs/DMG.md.
         run: scripts/dmg.sh build/bin/mssh-${GITHUB_REF_NAME}-macos-universal.dmg
 
-      - uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: macos
+          path: |
             build/bin/*.zip
             build/bin/*.dmg
+
+  linux:
+    needs: version
+    # 22.04 for its older glibc: what is built here runs on 22.04 and later.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: GTK and WebKitGTK headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Build
+        run: wails build -platform linux/amd64 -tags webkit2_41
+
+      - name: .deb and .rpm
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+          export VERSION=$(jq -r .info.productVersion wails.json)
+          nfpm package --config build/linux/nfpm.yaml --packager deb --target build/bin/
+          nfpm package --config build/linux/nfpm.yaml --packager rpm --target build/bin/
+
+      - name: AppImage
+        run: bash build/linux/appimage.sh "$(jq -r .info.productVersion wails.json)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            build/bin/*.deb
+            build/bin/*.rpm
+            build/bin/*.AppImage
+
+  publish:
+    # One job makes the release, once every build has succeeded. Two jobs
+    # uploading at the same moment can each create a release of their own, and
+    # a failed Linux build must not leave a release with only the Mac files.
+    needs: [macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
