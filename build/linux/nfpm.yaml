@@ -1,0 +1,41 @@
+# One description of the package, from which nfpm makes both the .deb and the
+# .rpm. VERSION comes from the environment: CI reads it out of wails.json.
+name: mssh
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: thanhhai45 <thanhhai82451495@gmail.com>
+description: SSH and AWS SSM workspace manager
+vendor: HaNo
+homepage: https://github.com/thanhhai45/mssh
+license: Proprietary
+
+contents:
+  - src: build/bin/mssh
+    dst: /usr/bin/mssh
+    file_info:
+      mode: 0755
+  - src: build/linux/mssh.desktop
+    dst: /usr/share/applications/mssh.desktop
+  - src: build/linux/mssh.png
+    dst: /usr/share/icons/hicolor/512x512/apps/mssh.png
+
+overrides:
+  deb:
+    depends:
+      # 24.04 renamed GTK's package in the 64-bit time_t transition.
+      - libgtk-3-0 | libgtk-3-0t64
+      - libwebkit2gtk-4.1-0
+    recommends:
+      - openssh-client
+  rpm:
+    # By library rather than by package: Fedora and openSUSE name the same
+    # WebKitGTK differently (webkit2gtk4.1, libwebkit2gtk-4_1-0), and both
+    # know which of their packages provides libwebkit2gtk-4.1.so.0.
+    depends:
+      - libgtk-3.so.0()(64bit)
+      - libwebkit2gtk-4.1.so.0()(64bit)
+    recommends:
+      - openssh-clients
