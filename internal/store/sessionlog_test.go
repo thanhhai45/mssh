@@ -33,7 +33,7 @@ func TestSessionLogKeepsWhatWasTrueAtTheTime(t *testing.T) {
 	s := openTest(t)
 	workspace, connection := newConnection(t, s)
 
-	if err := s.RecordSessionOpened("session-1", connection.ID); err != nil {
+	if err := s.RecordSessionOpened("session-1", connection.ID, ""); err != nil {
 		t.Fatalf("RecordSessionOpened: %v", err)
 	}
 
@@ -53,13 +53,33 @@ func TestSessionLogKeepsWhatWasTrueAtTheTime(t *testing.T) {
 	}
 }
 
+// A service connection records the task it went into, and that is kept apart
+// from the target, which still names the service.
+func TestSessionLogKeepsWhereTheSessionLanded(t *testing.T) {
+	s := openTest(t)
+	_, connection := newConnection(t, s)
+
+	const task = "arn:aws:ecs:ap-southeast-1:111122223333:task/prod/3f9c"
+	if err := s.RecordSessionOpened("session-1", connection.ID, task); err != nil {
+		t.Fatalf("RecordSessionOpened: %v", err)
+	}
+
+	entry := onlyEntry(t, s, SessionLogFilter{})
+	if entry.LandedOn != task {
+		t.Errorf("LandedOn = %q, want %q", entry.LandedOn, task)
+	}
+	if entry.Target != connection.Target {
+		t.Errorf("Target = %q, want the connection's own %q", entry.Target, connection.Target)
+	}
+}
+
 // Every other table cascades. This one must not: deleting a server must not
 // delete the evidence that someone was on it.
 func TestSessionLogOutlivesWhatItDescribes(t *testing.T) {
 	s := openTest(t)
 	workspace, connection := newConnection(t, s)
 
-	if err := s.RecordSessionOpened("session-1", connection.ID); err != nil {
+	if err := s.RecordSessionOpened("session-1", connection.ID, ""); err != nil {
 		t.Fatalf("RecordSessionOpened: %v", err)
 	}
 	if err := s.DeleteWorkspace(workspace.ID); err != nil {
@@ -79,7 +99,7 @@ func TestFirstReportOfAnEndingWins(t *testing.T) {
 	_, connection := newConnection(t, s)
 	clockAt(s, 100, 160, 170)
 
-	if err := s.RecordSessionOpened("session-1", connection.ID); err != nil {
+	if err := s.RecordSessionOpened("session-1", connection.ID, ""); err != nil {
 		t.Fatalf("RecordSessionOpened: %v", err)
 	}
 	if err := s.RecordSessionClosed("session-1", SessionClosedByUser, ""); err != nil {
@@ -106,7 +126,7 @@ func TestInterruptedSessionsAreSettledAtStartup(t *testing.T) {
 	_, connection := newConnection(t, s)
 
 	for _, id := range []string{"left-open", "closed-properly"} {
-		if err := s.RecordSessionOpened(id, connection.ID); err != nil {
+		if err := s.RecordSessionOpened(id, connection.ID, ""); err != nil {
 			t.Fatalf("RecordSessionOpened %s: %v", id, err)
 		}
 	}
@@ -149,7 +169,7 @@ func TestSessionLogFilters(t *testing.T) {
 	for _, row := range []struct{ id, connection string }{
 		{"a-100", alpha.ID}, {"b-200", beta.ID}, {"a-300", alpha.ID},
 	} {
-		if err := s.RecordSessionOpened(row.id, row.connection); err != nil {
+		if err := s.RecordSessionOpened(row.id, row.connection, ""); err != nil {
 			t.Fatalf("RecordSessionOpened %s: %v", row.id, err)
 		}
 	}
@@ -193,7 +213,7 @@ func TestSessionLogFilters(t *testing.T) {
 
 func TestRecordingAnUnknownConnectionFails(t *testing.T) {
 	s := openTest(t)
-	if err := s.RecordSessionOpened("session-1", "no-such-connection"); err == nil {
+	if err := s.RecordSessionOpened("session-1", "no-such-connection", ""); err == nil {
 		t.Error("a session for a connection that does not exist was recorded")
 	}
 }

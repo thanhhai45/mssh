@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react'
-import {Cloud, CloudCog, Eye, EyeOff, KeyRound, Terminal} from 'lucide-react'
+import {Cloud, CloudCog, Container, Eye, EyeOff, KeyRound, Terminal} from 'lucide-react'
 
 import {ColorPicker} from '@/components/color-picker'
 import {Button} from '@/components/ui/button'
@@ -23,6 +23,7 @@ import {
     emptyConnectionInput,
     errorMessage,
     KIND_META,
+    parseECSExecExtra,
     toConnectionInput,
     usesAWS,
     usesSSH,
@@ -30,6 +31,7 @@ import {
     type Connection,
     type ConnectionInput,
     type ConnectionKind,
+    type ECSExecExtra,
     type Workspace,
 } from '@/lib/api'
 import {cn} from '@/lib/utils'
@@ -40,6 +42,7 @@ const KIND_ICON: Record<ConnectionKind, typeof KeyRound> = {
     'ssh': KeyRound,
     'ssm': Cloud,
     'ssm-ssh': CloudCog,
+    'ecs-exec': Container,
 }
 
 export function ConnectionDialog({
@@ -108,6 +111,16 @@ export function ConnectionDialog({
         setInput((prev) => ({...prev, [key]: value}))
     }
 
+    // The ECS fields live in `extra` as JSON; the form edits them one by one.
+    const ecs = parseECSExecExtra(input.extra)
+
+    function setECS<K extends keyof ECSExecExtra>(key: K, value: ECSExecExtra[K]) {
+        setInput((prev) => ({
+            ...prev,
+            extra: JSON.stringify({...parseECSExecExtra(prev.extra), [key]: value}),
+        }))
+    }
+
     async function fillFromCommand() {
         setError(null)
         try {
@@ -167,6 +180,7 @@ export function ConnectionDialog({
 
     const showSSHFields = usesSSH(input.kind)
     const showAWSFields = usesAWS(input.kind)
+    const isECS = input.kind === 'ecs-exec'
     const showPasswordField = showSSHFields && input.authMethod === 'password'
 
     return (
@@ -262,13 +276,13 @@ export function ConnectionDialog({
                         {/* ---- Target ---- */}
                         <div className="grid gap-2">
                             <Label htmlFor="conn-target">
-                                {input.kind == 'ssh-config' ? 'SSH host alias' : showAWSFields ? 'Instance ID' : 'Host'}
+                                {input.kind == 'ssh-config' ? 'SSH host alias' : isECS ? 'Service' : showAWSFields ? 'Instance ID' : 'Host'}
                         </Label>
                             <Input
                                 id="conn-target"
                                 value={input.target}
                                 onChange={(e) => set('target', e.target.value)}
-                                placeholder={input.kind === 'ssh-config' ? 'prod-web-1' : showAWSFields ? 'i-0abc123456789' : '10.0.4.12'}
+                                placeholder={input.kind === 'ssh-config' ? 'prod-web-1' : isECS ? 'api' : showAWSFields ? 'i-0abc123456789' : '10.0.4.12'}
                             />
                             {input.kind === 'ssh-config' && (
                                 <p className="text-xs text-muted-foreground">
@@ -277,7 +291,48 @@ export function ConnectionDialog({
                                     ProxyCommand, jump hosts — comes from there.
                                 </p>
                             )}
+                            {isECS && (
+                                <p className="text-xs text-muted-foreground">
+                                    The ECS service, not a task. Every connect looks up its newest
+                                    healthy task, so a deploy never leaves this connection stale.
+                                </p>
+                            )}
                         </div>
+
+                        {/* ---- ECS-only fields ---- */}
+                        {isECS && (
+                            <>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="conn-cluster">Cluster</Label>
+                                    <Input
+                                        id="conn-cluster"
+                                        value={ecs.cluster}
+                                        onChange={(e) => setECS('cluster', e.target.value)}
+                                        placeholder="prod"
+                                    />
+                                </div>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="conn-container">Container</Label>
+                                        <Input
+                                            id="conn-container"
+                                            value={ecs.container}
+                                            onChange={(e) => setECS('container', e.target.value)}
+                                            placeholder="only needed with sidecars"
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="conn-command">Command</Label>
+                                        <Input
+                                            id="conn-command"
+                                            value={ecs.command}
+                                            onChange={(e) => setECS('command', e.target.value)}
+                                            placeholder="/bin/sh"
+                                        />
+                                    </div>
+                                </div>
+                            </>
+                        )}
 
                         {/* ---- SSH-only fields ---- */}
                         {showSSHFields && (
@@ -451,7 +506,10 @@ export function ConnectionDialog({
                         </Button>
                         <Button
                             type="submit"
-                            disabled={saving || !input.name.trim() || !input.target.trim()}
+                            disabled={
+                                saving || !input.name.trim() || !input.target.trim() ||
+                                (isECS && !ecs.cluster.trim())
+                            }
                         >
                             {saving ? 'Saving…' : isEdit ? 'Save' : 'Create'}
                         </Button>

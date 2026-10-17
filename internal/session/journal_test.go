@@ -12,14 +12,19 @@ import (
 )
 
 // fakeJournal remembers what it was told, in order, as short strings:
-// "opened s1", "closed s1 closed", "closed s1 failed: <message>".
+// "opened s1", "opened s1 on <where>", "closed s1 closed",
+// "closed s1 failed: <message>".
 type fakeJournal struct {
 	mutex  sync.Mutex
 	events []string
 }
 
-func (journal *fakeJournal) RecordSessionOpened(sessionID string, _ string) error {
-	journal.add("opened " + sessionID)
+func (journal *fakeJournal) RecordSessionOpened(sessionID string, _ string, landedOn string) error {
+	event := "opened " + sessionID
+	if landedOn != "" {
+		event += " on " + landedOn
+	}
+	journal.add(event)
 	return nil
 }
 
@@ -138,5 +143,47 @@ func TestAFailedDialIsNotRecorded(t *testing.T) {
 	}
 	if got := journal.got(); got != "" {
 		t.Errorf("a failed dial was recorded: %s", got)
+	}
+}
+
+// landingDialer is fakeDialer whose sessions say where they landed, as an
+// ecs-exec session names the task it picked.
+type landingDialer struct {
+	*fakeDialer
+	landedOn string
+}
+
+type landedSession struct {
+	transport.Session
+	landedOn string
+}
+
+func (session landedSession) LandedOn() string { return session.landedOn }
+
+func (d landingDialer) Dial(
+	dialContext context.Context,
+	config transport.Config,
+	size transport.Size,
+	onOutput func([]byte), onExit func(error),
+) (transport.Session, error) {
+	session, err := d.fakeDialer.Dial(dialContext, config, size, onOutput, onExit)
+	if err != nil {
+		return nil, err
+	}
+	return landedSession{Session: session, landedOn: d.landedOn}, nil
+}
+
+// The log must name the task a service connection went into, not only the
+// service: by the time anybody reads it, that task is long gone.
+func TestJournalRecordsWhereASessionLanded(t *testing.T) {
+	journal := &fakeJournal{}
+	manager := NewManager(journal)
+	dialer := landingDialer{fakeDialer: &fakeDialer{}, landedOn: "arn:aws:ecs:x:1:task/prod/abc"}
+	manager.dialerFor = func(string) (transport.Dialer, error) { return dialer, nil }
+
+	open(t, manager, "s1", "c1")
+
+	if got, want := journal.got(), "opened s1 on arn:aws:ecs:x:1:task/prod/abc"; got != want {
+		t.Errorf("journal: got %q, want %q", got, want)
 	}
 }

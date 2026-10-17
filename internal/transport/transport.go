@@ -13,6 +13,7 @@ const (
 	KindSSM       = "ssm"
 	KindSSMSSH    = "ssm-ssh"
 	KindSSHConfig = "ssh-config"
+	KindECSExec   = "ecs-exec"
 )
 
 const (
@@ -33,7 +34,7 @@ type Size struct {
 // no inheritance rules and no keychain access happen inside this package.
 type Config struct {
 	Kind       string
-	Target     string // Target is a hostname or IP for KindSSH, an instance id for the SSM kinds.
+	Target     string // Target is a hostname or IP for KindSSH, an instance id for the SSM kinds, a service for KindECSExec.
 	Port       int
 	Username   string
 	AuthMethod string
@@ -80,6 +81,21 @@ type FileBrowser interface {
 	SFTP() (*sftp.Client, error)
 }
 
+// Lander is a Session whose target named a way to find the machine rather
+// than the machine itself, and that can say where it ended up. ecs-exec is
+// one: its target is a service, and it lands in one of the service's tasks.
+type Lander interface {
+	LandedOn() string
+}
+
+// LandedOn is where a session really went, or "" when its target already says.
+func LandedOn(session Session) string {
+	if lander, ok := session.(Lander); ok {
+		return lander.LandedOn()
+	}
+	return ""
+}
+
 // ErrNoFileBrowsing is what a session that cannot move files answers.
 var ErrNoFileBrowsing = errors.New(
 	"this connection runs a program rather than holding an SSH connection, so it cannot browse files")
@@ -111,6 +127,8 @@ func For(kind string) (Dialer, error) {
 		return ssmSSHDialer{}, nil
 	case KindSSHConfig:
 		return sshConfigDialer{}, nil
+	case KindECSExec:
+		return ecsExecDialer{}, nil
 	default:
 		return nil, fmt.Errorf("unknown connection kind %q", kind)
 	}

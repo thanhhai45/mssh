@@ -12,18 +12,18 @@ import (
 // it was called that day, is the journal's business. *store.Store implements
 // this with the same two methods it already has, and copies the rest in.
 type Journal interface {
-	RecordSessionOpened(sessionID string, connectionID string) error
+	RecordSessionOpened(sessionID string, connectionID string, landedOn string) error
 	RecordSessionClosed(sessionID string, reason string, message string) error
 }
 
 // recordOpened and recordClosed are best effort. A log that cannot be written
 // must not take down a session that works; it is reported, and the session
 // carries on. A nil journal records nothing, which is what tests want.
-func (manager *Manager) recordOpened(sessionID string, connectionID string) {
+func (manager *Manager) recordOpened(sessionID string, connectionID string, landedOn string) {
 	if manager.journal == nil {
 		return
 	}
-	if err := manager.journal.RecordSessionOpened(sessionID, connectionID); err != nil {
+	if err := manager.journal.RecordSessionOpened(sessionID, connectionID, landedOn); err != nil {
 		log.Printf("mssh: session log: %v", err)
 	}
 }

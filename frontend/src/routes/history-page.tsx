@@ -248,6 +248,15 @@ function SessionRow({entry, readAt}: {entry: SessionLogEntry; readAt: number}) {
                 <div className="pl-6 text-xs whitespace-nowrap text-muted-foreground">
                     {kindMeta(entry.kind).label} · {entry.username ? `${entry.username}@` : ''}{entry.target}
                 </div>
+                {entry.landedOn && (
+                    // The full ARN is what an audit needs; the id is what fits.
+                    <div
+                        className="pl-6 font-mono text-xs whitespace-nowrap text-muted-foreground"
+                        title={entry.landedOn}
+                    >
+                        task {entry.landedOn.split('/').pop()}
+                    </div>
+                )}
             </td>
             <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{entry.workspaceName}</td>
             <td className="px-3 py-2 text-xs whitespace-nowrap text-muted-foreground">
