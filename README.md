@@ -33,10 +33,12 @@ binary.
 
 ## Install
 
-### Download a build
+Every build is on the [Releases page](https://github.com/thanhhai45/mssh/releases).
+macOS and Linux for now; Windows is on its way (see [Requirements](#requirements)).
 
-Grab the latest `mssh-<version>-macos-universal.dmg` (or `.zip`) from the
-[Releases page](https://github.com/thanhhai45/mssh/releases), open it, and drag
+### macOS
+
+Grab `mssh-<version>-macos-universal.dmg` (or `.zip`), open it, and drag
 `mssh.app` into `/Applications`. One universal build runs on Apple silicon and
 Intel.
 
@@ -52,15 +54,43 @@ Or clear the quarantine flag from a terminal:
 xattr -dr com.apple.quarantine /Applications/mssh.app
 ```
 
+### Linux
+
+Pick the package your distribution installs with. The package manager brings
+in GTK and WebKitGTK, and mssh appears in your applications menu.
+
+| Distribution | File | Install with |
+|---|---|---|
+| Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Pop!_OS | `mssh_<version>_amd64.deb` | `sudo apt install ./mssh_<version>_amd64.deb` |
+| Fedora | `mssh-<version>-1.x86_64.rpm` | `sudo dnf install ./mssh-<version>-1.x86_64.rpm` |
+| openSUSE Tumbleweed / Leap | `mssh-<version>-1.x86_64.rpm` | `sudo zypper install --allow-unsigned-rpm ./mssh-<version>-1.x86_64.rpm` |
+| Anything else — Arch, Manjaro, … | `mssh-<version>-x86_64.AppImage` | `chmod +x mssh-*.AppImage`, then run it |
+
+Remove it the same way: `sudo apt remove mssh`, `sudo dnf remove mssh`,
+`sudo zypper remove mssh`, or delete the AppImage.
+
+**ARM64** (Raspberry Pi 5, Snapdragon laptops): there is an `_arm64.deb` and an
+`.aarch64.rpm`, installed the same way. They are built and checked by CI but
+have not been tried by hand yet. There is no ARM AppImage.
+
+**The AppImage** carries GTK and WebKitGTK inside it, so it needs nothing
+installed beyond what any desktop already has — fonts, X11 or Wayland, OpenGL.
+It is larger than the packages (around 90 MB against 15) and does not update
+itself. On Wayland it runs through XWayland.
+
+The packages are not signed, which is why openSUSE needs
+`--allow-unsigned-rpm`. apt and dnf install a local file without asking.
+
 ### Build from source
 
 ```bash
 git clone git@github.com:thanhhai45/mssh.git && cd mssh
-wails build
+wails build                   # macOS: build/bin/mssh.app
+wails build -tags webkit2_41  # Linux: build/bin/mssh
 ```
 
-The application is written to `build/bin/mssh.app`. See
-[Requirements](#requirements) for what building needs.
+On Linux the tag selects WebKitGTK 4.1, the only one Ubuntu 24.04 and later
+ship. See [Requirements](#requirements) for what building needs.
 
 ---
 
@@ -101,14 +131,21 @@ The application is written to `build/bin/mssh.app`. See
 
 ### Keyboard shortcuts
 
-| Key | Does |
-| --- | --- |
-| `⌘P` | Jump to any connection by name, host or workspace. |
-| `⌘T` | New terminal tab for this machine. |
-| `⌘W` | Close the current tab (the last one stays). |
-| `⌘E` | Open or close the Files drawer. |
-| `⌘F` | Find in the terminal. `⏎` next match, `⇧⏎` previous, `Esc` close. |
-| `⌘K` | Clear the terminal, iTerm2 style — local only, the remote shell is not told. |
+| macOS | Linux | Does |
+| --- | --- | --- |
+| `⌘P` | `Ctrl+Shift+P` | Jump to any connection by name, host or workspace. |
+| `⌘T` | `Ctrl+Shift+T` | New terminal tab for this machine. |
+| `⌘W` | `Ctrl+Shift+W` | Close the current tab (the last one stays). |
+| `⌘E` | `Ctrl+Shift+E` | Open or close the Files drawer. |
+| `⌘F` | `Ctrl+Shift+F` | Find in the terminal. `⏎` next match, `⇧⏎` previous, `Esc` close. |
+| `⌘K` | `Ctrl+Shift+K` | Clear the terminal, iTerm2 style — local only, the remote shell is not told. |
+| `⌘B` | `Ctrl+Shift+B` | Show or hide the sidebar. |
+| `⌘C` / `⌘V` | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy the selection / paste into the terminal. |
+
+On Linux every shortcut takes Shift as well, as in GNOME Terminal and Windows
+Terminal: `Ctrl` + a letter alone belongs to the shell — `Ctrl+C` interrupts,
+`Ctrl+W` deletes a word, `Ctrl+R` searches history — and mssh leaves all of
+them to it.
 
 | | |
 |---|---|
@@ -152,18 +189,31 @@ SSM** when you want that tunnel *and* your own account rather than `ssm-user`.
 
 ### Always
 
-- **macOS** — developed, tested and released here. Windows and Linux installers
-  are planned; the app compiles for both, but neither is tested yet.
+- **macOS**, or
+- **Linux** with glibc 2.34 or newer — Ubuntu 22.04, Mint 21, Debian 12,
+  Fedora, openSUSE and anything newer — on x86_64 or ARM64. GTK 3 and
+  WebKitGTK 4.1 come with the package, or inside the AppImage.
+
+**Windows** is not released yet. The app compiles for it, but the AWS SSM and
+System SSH kinds, and keys in the Windows ssh-agent, do not work there so far.
 
 Nothing else. Direct SSH connections work out of the box — the SSH client is
 compiled into the binary.
 
 ### Only for the AWS SSM kinds
 
+The AWS CLI (version 2) and the Session Manager plugin. On macOS:
+
 ```bash
 brew install awscli
 brew install --cask session-manager-plugin
 ```
+
+On Linux, use AWS's own installers: the
+[AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+— not the `awscli` in Ubuntu's apt, which is version 1 and has no
+`aws sso login` — and the plugin's
+[`.deb` or `.rpm`](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html).
 
 The app checks for both before it tries to connect, and tells you which one is
 missing rather than failing silently. It also reports an expired SSO session and
@@ -177,11 +227,21 @@ pair — see [Security](#security).
 
 - Go 1.26 or newer
 - Node.js 20 or newer
-- The Wails CLI:
+- The Wails CLI, at the version `go.mod` uses:
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 ```
+
+- On Linux, a C compiler and the GTK and WebKitGTK headers. On Ubuntu or Debian:
+
+```bash
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+```
+
+A binary built on a newer distribution will not start on an older one — glibc
+only runs forward. The released packages are built on Ubuntu 22.04 for that
+reason.
 
 ---
 
@@ -381,7 +441,9 @@ frontend/src/
 | `refused the credentials` | Check the username character for character, and whether the server allows password logins at all |
 | `ssh-agent is not running` | Start it, or switch the connection to a key file or password |
 | `key ... is protected by a passphrase` | `ssh-add <key>`, then use the SSH agent method |
-| `the Session Manager plugin is not installed` | `brew install --cask session-manager-plugin` |
+| `the Session Manager plugin is not installed` | macOS: `brew install --cask session-manager-plugin`. Linux: the `.deb` or `.rpm` the message links to |
+| AppImage: `dlopen(): error loading libfuse.so.2` | Your system has no FUSE 2. Install it (`sudo apt install libfuse2t64` on Ubuntu 24.04, `libfuse2` before that), or run the AppImage with `--appimage-extract-and-run` |
+| Linux: the window opens blank | Usually the graphics driver and WebKitGTK disagreeing. Start mssh as `WEBKIT_DISABLE_DMABUF_RENDERER=1 mssh` |
 | `your AWS session has expired` | Run the `aws sso login` command in the message |
 | `no AWS credentials this app can see` | mssh does not take AWS keys from your shell environment. Either configure the AWS CLI (`aws sso login` or `aws configure`) and set the profile on the workspace, or edit the workspace, choose *Use keys stored in mssh* and press *Import from shell* |
 | `set to use AWS keys stored in mssh, but none are saved` | Edit the workspace and add the keys, or switch it back to the AWS CLI's configuration |
