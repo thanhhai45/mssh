@@ -162,17 +162,19 @@ jobs:
     # exactly what linuxdeploy leaves to the system (fonts, X11 and Wayland,
     # OpenGL, the C and C++ runtimes; "Skipping deployment of blacklisted
     # library" in the build log) - what any desktop already has - and no more.
+    # Plus OpenGL ES, which WebKit opens at run time, where linuxdeploy cannot
+    # see it: Arch's libglvnd has it, Ubuntu and Fedora package it apart.
     needs: linux-build
     strategy:
       fail-fast: false
       matrix:
         include:
           - image: ubuntu:24.04
-            prepare: apt-get update && apt-get install -y xvfb xauth procps fonts-dejavu-core libfontconfig1 libfreetype6 libharfbuzz0b libfribidi0 libx11-6 libx11-xcb1 libxcb1 libwayland-client0 libegl1 libgl1 libgbm1 libdrm2 libexpat1 libuuid1 libgmp10 libgpg-error0 libcom-err2 libstdc++6 zlib1g
+            prepare: apt-get update && apt-get install -y xvfb xauth procps fonts-dejavu-core libfontconfig1 libfreetype6 libharfbuzz0b libfribidi0 libx11-6 libx11-xcb1 libxcb1 libwayland-client0 libegl1 libgl1 libgles2 libgbm1 libdrm2 libexpat1 libuuid1 libgmp10 libgpg-error0 libcom-err2 libstdc++6 zlib1g
           - image: ubuntu:latest
-            prepare: apt-get update && apt-get install -y xvfb xauth procps fonts-dejavu-core libfontconfig1 libfreetype6 libharfbuzz0b libfribidi0 libx11-6 libx11-xcb1 libxcb1 libwayland-client0 libegl1 libgl1 libgbm1 libdrm2 libexpat1 libuuid1 libgmp10 libgpg-error0 libcom-err2 libstdc++6 zlib1g
+            prepare: apt-get update && apt-get install -y xvfb xauth procps fonts-dejavu-core libfontconfig1 libfreetype6 libharfbuzz0b libfribidi0 libx11-6 libx11-xcb1 libxcb1 libwayland-client0 libegl1 libgl1 libgles2 libgbm1 libdrm2 libexpat1 libuuid1 libgmp10 libgpg-error0 libcom-err2 libstdc++6 zlib1g
           - image: fedora:latest
-            prepare: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth procps-ng dejavu-sans-fonts fontconfig freetype harfbuzz fribidi libX11 libX11-xcb libxcb libwayland-client mesa-libEGL mesa-libGL mesa-libgbm libdrm expat libuuid gmp libgpg-error libcom_err libstdc++ zlib-ng-compat
+            prepare: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth procps-ng dejavu-sans-fonts fontconfig freetype harfbuzz fribidi libX11 libX11-xcb libxcb libwayland-client mesa-libEGL mesa-libGL libglvnd-gles mesa-libgbm libdrm expat libuuid gmp libgpg-error libcom_err libstdc++ zlib-ng-compat
           - image: archlinux:latest
             prepare: pacman -Sy --noconfirm xorg-server-xvfb xorg-xauth procps-ng ttf-dejavu fontconfig freetype2 harfbuzz fribidi libx11 libxcb wayland mesa libglvnd libdrm expat util-linux-libs gmp libgpg-error e2fsprogs gcc-libs zlib
     runs-on: ubuntu-latest
