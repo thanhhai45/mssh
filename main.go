@@ -3,10 +3,12 @@ package main
 import (
 	"embed"
 	"log"
+	"runtime"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 
 	"mssh/internal/session"
 	"mssh/internal/store"
@@ -14,6 +16,12 @@ import (
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+// icon is the window's icon on Linux, where nothing else provides one: macOS
+// tkes it from the bundle and Windows from executable.
+//
+//go:embed build/appicon.png
+var icon []byte
 
 func main() {
 	dbPath, err := store.DefaultPath()
@@ -33,9 +41,14 @@ func main() {
 
 	passwords := st.ConnectionPasswords()
 
-	// Passwords saved by earlier versions are in the OS keychain. Move them
-	// here once after that the keychain is never read again.
-	moveKeychainPasswords(st, passwords)
+	// Passwords saved by versions before 0.6 are in the macOS keychain. Move
+	// them here once; after that the keychain is never read again. Those
+	// versions only ever shipped for macOS, so elsewhere there is nothing to
+	// move — and asking would mean a Secret Service that may not be running,
+	// or a prompt to unlock a keyring the user never meant to open.
+	if runtime.GOOS == "darwin" {
+		moveKeychainPasswords(st, passwords)
+	}
 
 	// Sessions the last run never got to close — a crash, a force quit, the
 	// battery running out — are settled before any new one can open, so the
@@ -60,6 +73,14 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		Linux: &linux.Options{
+			Icon:        icon,
+			ProgramName: "mssh",
+			// Wails turns GPU acceleration off when no Linux options are given,
+			// for WebKitGTK's blank windows on some drives. Giving options at
+			// all would quietly turn it back on, so it is said again here.
+			WebviewGpuPolicy: linux.WebviewGpuPolicyNever,
+		},
 		Bind: []interface{}{
 			app,
 		},

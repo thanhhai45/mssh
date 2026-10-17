@@ -297,3 +297,13 @@ func TestAWSEnvironmentCarriesTheRegion(t *testing.T) {
 		})
 	}
 }
+
+// Advice for one system must not send anybody to another system's tools.
+func TestInstallAdviceFitsTheSystem(t *testing.T) {
+	for _, goos := range []string{"linux", "windows"} {
+		aws, plugin := installAdvice(goos)
+		if strings.Contains(aws+plugin, "brew") {
+			t.Errorf("%s is told to use Homebrew: %q, %q", goos, aws, plugin)
+		}
+	}
+}

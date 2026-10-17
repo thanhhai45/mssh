@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -496,7 +497,8 @@ func TestPreflightNamesTheMissingPlugin(t *testing.T) {
 	useFakeAWS(t, fakeAWS{}, false)
 
 	err := ssmDialer{}.Preflight(Config{Target: "i-0test"})
-	if err == nil || !strings.Contains(err.Error(), "brew install --cask session-manager-plugin") {
+	_, pluginAdvice := installAdvice(runtime.GOOS)
+	if err == nil || !strings.Contains(err.Error(), pluginAdvice) {
 		t.Errorf("Preflight = %v, want the install command", err)
 	}
 }
