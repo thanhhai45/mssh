@@ -109,12 +109,16 @@ jobs:
           nfpm package --config build/linux/nfpm.yaml --packager deb --target build/bin
           nfpm package --config build/linux/nfpm.yaml --packager rpm --target build/bin
 
+      - name: AppImage
+        run: bash build/linux/appimage.sh "$(jq -r .info.productionVersion wails.json)"
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-packages
           path: |
             build/bin/*.deb
             build/bin/*.rpm
+            build/bin/*.AppImage
 
   linux-install:
     # Each package installed where people will install it, by the system's own
@@ -125,6 +129,8 @@ jobs:
       matrix:
         include:
           - image: ubuntu:24.04
+            install: apt-get update && apt-get install -y ./mssh_*.deb
+          - image: ubuntu:latest
             install: apt-get update && apt-get install -y ./mssh_*.deb
           - image: fedora:latest
             install: dnf install -y ./mssh-*.rpm
@@ -149,6 +155,66 @@ jobs:
           if ldd /usr/bin/mssh | grep 'not found'; then
             exit 1
           fi
+  appimage-run:
+    # The AppImage started where WebKitGTK is not installed at all: the window
+    # comes up under a virtual X server, and WebKit's helper processes - the
+    # part that needed patching - have to start with it. The container gets
+    # exactly what linuxdeploy leaves to the system (fonts, X11 and Wayland,
+    # OpenGL, the C and C++ runtimes; "Skipping deployment of blacklisted
+    # library" in the build log) - what any desktop already has - and no more.
+    # Plus OpenGL ES, which WebKit opens at run time, where linuxdeploy cannot
+    # see it: Arch's libglvnd has it, Ubuntu and Fedora package it apart.
+    needs: linux-build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:24.04
+            prepare: apt-get update && apt-get install -y xvfb xauth procps fonts-dejavu-core libfontconfig1 libfreetype6 libharfbuzz0b libfribidi0 libx11-6 libx11-xcb1 libxcb1 libwayland-client0 libegl1 libgl1 libgles2 libgbm1 libdrm2 libexpat1 libuuid1 libgmp10 libgpg-error0 libcom-err2 libstdc++6 zlib1g
+          - image: ubuntu:latest
+            prepare: apt-get update && apt-get install -y xvfb xauth procps fonts-dejavu-core libfontconfig1 libfreetype6 libharfbuzz0b libfribidi0 libx11-6 libx11-xcb1 libxcb1 libwayland-client0 libegl1 libgl1 libgles2 libgbm1 libdrm2 libexpat1 libuuid1 libgmp10 libgpg-error0 libcom-err2 libstdc++6 zlib1g
+          - image: fedora:latest
+            prepare: dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth procps-ng dejavu-sans-fonts fontconfig freetype harfbuzz fribidi libX11 libX11-xcb libxcb libwayland-client mesa-libEGL mesa-libGL libglvnd-gles mesa-libgbm libdrm expat libuuid gmp libgpg-error libcom_err libstdc++ zlib-ng-compat
+          - image: archlinux:latest
+            prepare: pacman -Sy --noconfirm xorg-server-xvfb xorg-xauth procps-ng ttf-dejavu fontconfig freetype2 harfbuzz fribidi libx11 libxcb wayland mesa libglvnd libdrm expat util-linux-libs gmp libgpg-error e2fsprogs gcc-libs zlib
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      # No FUSE in a container: unpack to /tmp and run from there instead.
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+
+      - name: A virtual X server
+        run: ${{ matrix.prepare }}
+
+      - name: Libraries the AppImage expects from the system
+        # Each file inside the AppImage that cannot find a library, and which.
+        # GTK's modules show up here harmlessly: they are only ever loaded into
+        # a process that has GTK already. mssh and WebKit's helpers must not.
+        run: |
+          chmod +x ./mssh-*.AppImage
+          ./mssh-*.AppImage --appimage-extract > /dev/null
+          find squashfs-root -type f \( -name '*.so*' -o -perm -u+x \) | while read -r file; do
+            missing=$(ldd "$file" 2>/dev/null | grep 'not found' || true)
+            if [ -n "$missing" ]; then
+              echo "$file"
+              echo "$missing"
+            fi
+          done
+
+      - name: Starts, and WebKit's helpers start with it
+        run: |
+          chmod +x ./mssh-*.AppImage
+          xvfb-run -a ./mssh-*.AppImage > mssh.log 2>&1 &
+          sleep 20
+          ps -eo args | grep -E 'mssh|WebKit' | grep -v grep || true
+          cat mssh.log
+          pgrep -x mssh > /dev/null
+          pgrep -f WebKitWebProcess > /dev/null
 
   frontend:
     runs-on: ubuntu-latest
