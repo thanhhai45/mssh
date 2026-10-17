@@ -1,7 +1,8 @@
 # One description of the package, from which nfpm makes both the .deb and the
-# .rpm. VERSION comes from the environment: CI reads it out of wails.json.
+# .rpm. VERSION and ARCH come from the environment: CI reads the version out
+# of wails.json, and ARCH is the architecture the job built for.
 name: mssh
-arch: amd64
+arch: ${ARCH}
 platform: linux
 version: ${VERSION}
 section: net
