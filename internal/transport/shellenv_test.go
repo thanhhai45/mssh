@@ -193,6 +193,9 @@ func TestReadLoginShellEnvironment(t *testing.T) {
 	})
 
 	t.Run("a shell that does not exist is an error, not a panic", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows runs no shell at all: see TestWindowsKeepsTheEnvironmentItHas")
+		}
 		t.Setenv("SHELL", "/nope/not/a/shell")
 
 		if _, err := readLoginShellEnvironment(); err == nil {
