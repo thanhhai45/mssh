@@ -235,6 +235,9 @@ func TestReadLoginShellEnvironment(t *testing.T) {
 // is merged in, and nothing else it exports reaches this process. No shell runs
 // here; loginShellEnvironment is replaced with a fixed answer.
 func TestAdoptLoginShellPathTakesNothingElse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows adopts nothing: see TestWindowsKeepsTheEnvironmentItHas")
+	}
 	original := loginShellEnvironment
 	t.Cleanup(func() { loginShellEnvironment = original })
 	loginShellEnvironment = func() (map[string]string, error) {
@@ -388,4 +391,28 @@ func TestAdoptLoginShellPathRepairsAFinderLikePATH(t *testing.T) {
 	}
 
 	t.Logf("4 entries -> %d", len(repaired))
+}
+
+// On Windows the environment mssh started with is the answer: no shell runs,
+// and PATH is left exactly as Windows gave it.
+func TestWindowsKeepsTheEnvironmentItHas(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows only")
+	}
+	t.Setenv("MSSH_TEST_MARKER", "kept")
+	const windowsPath = `C:\Windows\system32;C:\Program Files\Amazon\AWSCLIV2`
+	t.Setenv("PATH", windowsPath)
+
+	variables, err := readLoginShellEnvironment()
+	if err != nil {
+		t.Fatalf("readLoginShellEnvironment: %v", err)
+	}
+	if variables["MSSH_TEST_MARKER"] != "kept" {
+		t.Error("this process's own variables did not come back")
+	}
+
+	adoptLoginShellPath()
+	if got := os.Getenv("PATH"); got != windowsPath {
+		t.Errorf("PATH = %q, want it untouched: %q", got, windowsPath)
+	}
 }

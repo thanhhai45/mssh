@@ -41,6 +41,13 @@ func ensureUsableEnvironment() {
 // happens to export. AWS credentials now come from the workspace instead — see
 // docs/CREDENTIALS.md.
 func adoptLoginShellPath() {
+	// Windows has no login shell, and needs none: an app started from the Start
+	// menu already carries the user's whole PATH. Merging would also break it -
+	// mergePath splits on ":", and every Windows entry has one, as in C:\.
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	variables, err := loginShellEnvironment()
 	if err != nil {
 		// Fall back to the old guess rather than to nothing at all.
@@ -53,7 +60,8 @@ func adoptLoginShellPath() {
 }
 
 // mergePath joins two PATH values, keeping the order of the first and adding
-// only the directories the second contributes.
+// only the directories the second contributes. Unix PATHs only: see
+// adoptLoginShellPath.
 //
 // Comparing whole entries rather than running strings.Contains over the joined
 // value, which the previous version did: "/usr/bin" is a substring of
