@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,12 @@ func WarmShellEnvironment() {
 // and so will importing AWS keys from the shell, which has to see an edit made
 // to ~/.zshrc a minute ago.
 func readLoginShellEnvironment() (map[string]string, error) {
+	// Windows has no login shell to ask. What a user sets in System Properties
+	// is in this process's environment already - though only what was set
+	// before mssh started.
+	if runtime.GOOS == "windows" {
+		return processEnvironment(), nil
+	}
 	shell := loginShellPath()
 
 	runContext, cancel := context.WithTimeout(
@@ -132,6 +139,22 @@ func readLoginShellEnvironment() (map[string]string, error) {
 		variables[name] = value
 	}
 	return variables, nil
+}
+
+// processEnvironment is this process's own environment, in the form
+// readLoginShellEnvironment returns.
+func processEnvironment() map[string]string {
+	variables := map[string]string{}
+	for _, entry := range os.Environ() {
+		name, value, ok := strings.Cut(entry, "=")
+		// Windows lists each drive's wokring directory as "=C:=C:\...": no
+		// name, and nothing anybody set.
+		if !ok || name == "" || notInherited[name] {
+			continue
+		}
+		variables[name] = value
+	}
+	return variables
 }
 
 // AWSShellPreview is what the import button shows before anything is saved:
