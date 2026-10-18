@@ -37,17 +37,12 @@ func sshAuthMethods(config Config) ([]ssh.AuthMethod, func(), error) {
 func agentAuthMethods() ([]ssh.AuthMethod, func(), error) {
 	nothingToRelease := func() {}
 
-	agentSocket := os.Getenv("SSH_AUTH_SOCK")
-	if agentSocket == "" {
-		return nil, nothingToRelease, fmt.Errorf("ssh-agent is not running: SSH_AUTH_SOCK is unset")
-	}
-
-	agentConnection, err := net.Dial("unix", agentSocket)
+	agentConnection, err := dialAgent()
 	if err != nil {
-		return nil, nothingToRelease, fmt.Errorf("reach ssh-agent: %w", err)
+		return nil, nothingToRelease, err
 	}
 
-	// The signers keep talking to the agent over this socket during the
+	// The signers keep talking to the agent over this connection during the
 	// handshake, so it cannot be closed until Dial is done with them.
 	agentClient := agent.NewClient(agentConnection)
 	methods := []ssh.AuthMethod{ssh.PublicKeysCallback(agentClient.Signers)}

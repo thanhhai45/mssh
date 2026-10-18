@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -27,7 +28,9 @@ func (sshDialer) Preflight(config Config) error {
 			return fmt.Errorf("Key file %s is not readable: %w", config.KeyPath, err)
 		}
 	case AuthAgent, "":
-		if os.Getenv("SSH_AUTH_SOCK") == "" {
+		// Windows agent sits at a fixed pipe, and nothing sets SSH_AUTH_SOCK
+		// for it: dialAgent says so there if the service is not running.
+		if runtime.GOOS != "windows" && os.Getenv("SSH_AUTH_SOCK") == "" {
 			return fmt.Errorf(
 				"ssh-agent is not running (SSH_AUTH_SOCK is unse); start it, " +
 					"or switch this connection to a key file")
