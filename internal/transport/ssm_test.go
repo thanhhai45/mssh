@@ -115,7 +115,6 @@ func prepareFakeAWS(parent string) error {
 	if err != nil {
 		return err
 	}
-	script := fmt.Sprintf("#!/bin/sh\n%s=1 exec %q \"$@\"\n", fakeAWSMode, binary)
 
 	fakeAWSDirectory = filepath.Join(parent, "aws-full")
 	fakeAWSWithoutPlugin = filepath.Join(parent, "aws-only")
@@ -123,12 +122,53 @@ func prepareFakeAWS(parent string) error {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
 			return err
 		}
+	}
+
+	// Windows reads no #! line, and finds only names ending in PATHEXT, so
+	// the fakes there are copies of this binary named aws.exe and
+	// session-manager-plugin.exe. Each knows from its own name what to be:
+	// see runningAs.
+	if runtime.GOOS == "windows" {
+		for _, fake := range []string{
+			filepath.Join(fakeAWSDirectory, "aws.exe"),
+			filepath.Join(fakeAWSWithoutPlugin, "aws.exe"),
+			filepath.Join(fakeAWSDirectory, "session-manager-plugin.exe"),
+		} {
+			if err := copyExecutable(binary, fake); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	script := fmt.Sprintf("#!/bin/sh\n%s=1 exec %q \"$@\"\n", fakeAWSMode, binary)
+	for _, directory := range []string{fakeAWSDirectory, fakeAWSWithoutPlugin} {
 		if err := os.WriteFile(filepath.Join(directory, "aws"), []byte(script), 0o700); err != nil {
 			return err
 		}
 	}
 	return os.WriteFile(filepath.Join(fakeAWSDirectory, "session-manager-plugin"),
 		[]byte("#!/bin/sh\nexit 0\n"), 0o700)
+}
+
+// copyExecutable copies the program at source to target.
+func copyExecutable(source string, target string) error {
+	content, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(target, content, 0o700)
+}
+
+// runningAs reports whether this binary was started as a copy called name:
+// how the Windows fakes, which have no script to set fakeAWSMode, know what
+// they are.
+func runningAs(name string) bool {
+	executable, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSuffix(filepath.Base(executable), ".exe"), name)
 }
 
 // fakeAWS is what the test asked the fake to do. Every field reaches the
@@ -156,7 +196,6 @@ type fakeAWS struct {
 // useFakeAWS puts the fake first on PATH and returns the files it reports in.
 func useFakeAWS(t *testing.T, fake fakeAWS, withPlugin bool) (argsLog string, pidFile string) {
 	t.Helper()
-	skipWithoutUnixShell(t)
 	// Preflight would otherwise adopt the login shell's PATH, and with it a
 	// real aws or session-manager-plugin. Marking that done keeps the test
 	// to the PATH it sets.

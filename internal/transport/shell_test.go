@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -122,4 +125,28 @@ func keyFromSeed(t *testing.T, seed []byte) ssh.PublicKey {
 		t.Fatalf("public key: %v", err)
 	}
 	return key
+}
+
+// noDeadlineConn is a connection that cannot take a deadline: what the ssm-ssh
+// tunnel's pipes are on Windows.
+type noDeadlineConn struct{ net.Conn }
+
+func (noDeadlineConn) SetDeadline(time.Time) error { return os.ErrNoDeadline }
+
+// A connection that takes no deadline still gives up on a peer that never
+// answers, in about the time a deadline would have.
+func TestHandshakeGivesUpWithoutDeadlines(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() { _ = server.Close() })
+
+	began := time.Now()
+	_, _, _, err := handshake(noDeadlineConn{client}, "silent:22",
+		&ssh.ClientConfig{HostKeyCallback: ssh.InsecureIgnoreHostKey()},
+		200*time.Millisecond)
+	if !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("handshake = %v, want a timeout", err)
+	}
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("gave up after %v, for a limit of 200ms", took)
+	}
 }
