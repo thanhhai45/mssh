@@ -34,7 +34,7 @@ binary.
 ## Install
 
 Every build is on the [Releases page](https://github.com/thanhhai45/mssh/releases).
-macOS and Linux for now; Windows is on its way (see [Requirements](#requirements)).
+macOS, Linux and — as a preview — Windows.
 
 ### macOS
 
@@ -81,16 +81,47 @@ itself. On Wayland it runs through XWayland.
 The packages are not signed, which is why openSUSE needs
 `--allow-unsigned-rpm`. apt and dnf install a local file without asking.
 
+### Windows (preview)
+
+Run `mssh-<version>-windows-amd64-installer.exe`. It asks for administrator
+rights once, installs into `C:\Program Files\HaNo\mssh`, adds mssh to the Start
+menu and the desktop, and installs Microsoft's WebView2 runtime if the machine
+does not already have it (Windows 11 does).
+
+Or take `mssh-<version>-windows-amd64.zip` — `mssh.exe` on its own — unzip it
+anywhere and run it, nothing installed. It needs WebView2 to be present.
+
+**Windows will warn you the first time.** Neither file is signed with a code
+signing certificate, so SmartScreen stops it:
+
+> Windows protected your PC
+
+Choose **More info**, then **Run anyway** — once. Your browser may ask whether
+to keep the download first, for the same reason.
+
+Uninstall from **Settings → Apps**. Your connections stay behind in
+`%AppData%\mssh\mssh.db`, so installing again picks up where you left off.
+
+**Why preview:** on Windows every connection kind, the SSH agent and the
+installer itself are exercised by CI — the installer is run, the app started
+and its web view checked on each change — but nobody has used it by hand yet.
+The Files drawer is not available on System SSH connections there (see
+[Connection kinds](#connection-kinds)). On a Windows on ARM machine the x64
+build runs under Windows' own emulation.
+
 ### Build from source
 
 ```bash
 git clone git@github.com:thanhhai45/mssh.git && cd mssh
 wails build                   # macOS: build/bin/mssh.app
 wails build -tags webkit2_41  # Linux: build/bin/mssh
+wails build -nsis             # Windows: build/bin/mssh.exe and the installer
 ```
 
 On Linux the tag selects WebKitGTK 4.1, the only one Ubuntu 24.04 and later
-ship. See [Requirements](#requirements) for what building needs.
+ship. On Windows `-nsis` needs [NSIS](https://nsis.sourceforge.io) on `PATH`;
+leave it out for `mssh.exe` alone. See [Requirements](#requirements) for what
+building needs.
 
 ---
 
@@ -131,7 +162,7 @@ ship. See [Requirements](#requirements) for what building needs.
 
 ### Keyboard shortcuts
 
-| macOS | Linux | Does |
+| macOS | Linux and Windows | Does |
 | --- | --- | --- |
 | `⌘P` | `Ctrl+Shift+P` | Jump to any connection by name, host or workspace. |
 | `⌘T` | `Ctrl+Shift+T` | New terminal tab for this machine. |
@@ -142,8 +173,8 @@ ship. See [Requirements](#requirements) for what building needs.
 | `⌘B` | `Ctrl+Shift+B` | Show or hide the sidebar. |
 | `⌘C` / `⌘V` | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy the selection / paste into the terminal. |
 
-On Linux every shortcut takes Shift as well, as in GNOME Terminal and Windows
-Terminal: `Ctrl` + a letter alone belongs to the shell — `Ctrl+C` interrupts,
+On Linux and Windows every shortcut takes Shift as well, as in GNOME Terminal
+and Windows Terminal: `Ctrl` + a letter alone belongs to the shell — `Ctrl+C` interrupts,
 `Ctrl+W` deletes a word, `Ctrl+R` searches history — and mssh leaves all of
 them to it.
 
@@ -194,8 +225,20 @@ SSM** when you want that tunnel *and* your own account rather than `ssm-user`.
   Fedora, openSUSE and anything newer — on x86_64 or ARM64. GTK 3 and
   WebKitGTK 4.1 come with the package, or inside the AppImage.
 
-**Windows** is not released yet. The app compiles for it, but the AWS SSM and
-System SSH kinds, and keys in the Windows ssh-agent, do not work there so far.
+- **Windows 10 version 1809 or newer, or Windows 11**, on x64 — 1809 is the
+  first with the pseudo-console the AWS SSM and System SSH kinds run their
+  programs under — with the WebView2 runtime, which the installer adds if it is
+  missing. A preview: see [Install](#windows-preview).
+
+System SSH needs the `ssh` command. Windows 10 and 11 include OpenSSH as an
+optional feature, installed by default on 11; *Settings → System → Optional
+features → OpenSSH Client* adds it otherwise. To use keys from the SSH agent
+there, start Windows' own agent service once, from an administrator PowerShell:
+
+```powershell
+Get-Service ssh-agent | Set-Service -StartupType Automatic
+Start-Service ssh-agent
+```
 
 Nothing else. Direct SSH connections work out of the box — the SSH client is
 compiled into the binary.
@@ -214,6 +257,11 @@ On Linux, use AWS's own installers: the
 — not the `awscli` in Ubuntu's apt, which is version 1 and has no
 `aws sso login` — and the plugin's
 [`.deb` or `.rpm`](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html).
+
+On Windows, `winget install Amazon.AWSCLI`, and the plugin's
+[installer](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html).
+Start mssh again after installing either: Windows hands a running program the
+`PATH` it started with.
 
 The app checks for both before it tries to connect, and tells you which one is
 missing rather than failing silently. It also reports an expired SSO session and
@@ -243,6 +291,8 @@ A binary built on a newer distribution will not start on an older one — glibc
 only runs forward. The released packages are built on Ubuntu 22.04 for that
 reason.
 
+- On Windows nothing more — no C compiler — plus NSIS for the installer.
+
 ---
 
 ## First run
@@ -253,6 +303,7 @@ The database is created automatically the first time the app starts:
 |---|---|
 | macOS | `~/Library/Application Support/mssh/mssh.db` |
 | Linux | `~/.config/mssh/mssh.db` |
+| Windows | `%AppData%\mssh\mssh.db` |
 
 To back up your connections, copy that file. To start over, delete it — a fresh
 one is created on the next launch.
@@ -340,7 +391,10 @@ then connect again and accept the new fingerprint.
   command line, where every user on the machine could see them with `ps`.
 - **Only `PATH` is taken from your shell**, so mssh can find `aws` and `ssh`
   when opened from Finder. *Import from shell* reads the six `AWS_*` variables
-  it needs, when you press it, and nothing else.
+  it needs, when you press it, and nothing else. Windows has no login shell to
+  ask: there mssh keeps the `PATH` it was started with, and *Import from shell*
+  reads the variables set in *System Properties* — those set before mssh
+  started.
 - **Passphrase-protected SSH keys are not read directly.** Load those into
   `ssh-agent` with `ssh-add` and choose the agent authentication method.
 
@@ -439,9 +493,10 @@ frontend/src/
 | `the host key ... has CHANGED` | Stop and verify with the server's owner |
 | `refused the connection before the SSH handshake started` | sshd's `MaxStartups` turned you away because its queue of unauthenticated logins was full — on a public server that queue is mostly bots. mssh retries three times on its own; if it still fails, raise `MaxStartups` in `/etc/ssh/sshd_config` or put fail2ban in front of the port |
 | `refused the credentials` | Check the username character for character, and whether the server allows password logins at all |
-| `ssh-agent is not running` | Start it, or switch the connection to a key file or password |
+| `ssh-agent is not running` | Start it, or switch the connection to a key file or password. On Windows, start the *OpenSSH Authentication Agent* service — see [Requirements](#requirements) |
 | `key ... is protected by a passphrase` | `ssh-add <key>`, then use the SSH agent method |
-| `the Session Manager plugin is not installed` | macOS: `brew install --cask session-manager-plugin`. Linux: the `.deb` or `.rpm` the message links to |
+| `the Session Manager plugin is not installed` | macOS: `brew install --cask session-manager-plugin`. Linux: the `.deb` or `.rpm` the message links to. Windows: the installer the message links to, then start mssh again |
+| Windows: `the AWS CLI is not installed` right after installing it | mssh still has the `PATH` it started with. Quit it and start it again |
 | AppImage: `dlopen(): error loading libfuse.so.2` | Your system has no FUSE 2. Install it (`sudo apt install libfuse2t64` on Ubuntu 24.04, `libfuse2` before that), or run the AppImage with `--appimage-extract-and-run` |
 | Linux: the window opens blank | Usually the graphics driver and WebKitGTK disagreeing. Start mssh as `WEBKIT_DISABLE_DMABUF_RENDERER=1 mssh` |
 | `your AWS session has expired` | Run the `aws sso login` command in the message |
