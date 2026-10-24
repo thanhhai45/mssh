@@ -156,7 +156,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
       - name: Build
-        run: wails build -platform window/amd64 -nsis
+        run: wails build -platform windows/amd64 -nsis
 
       - name: Package
         # Named after the tag, as the macOS files are. The zip is mssh.exe on
@@ -164,7 +164,7 @@ jobs:
         shell: pwsh
         run: |
           Set-Location build/bin
-          Get-ChildUtem *installer.exe |
+          Get-ChildItem *-installer.exe |
             Rename-Item -NewName "mssh-$env:GITHUB_REF_NAME-windows-amd64-installer.exe"
           Compress-Archive -Path mssh.exe -DestinationPath "mssh-$env:GITHUB_REF_NAME-windows-amd64.zip"
 
