@@ -276,9 +276,10 @@ func (connection *processConn) Close() error {
 func (connection *processConn) LocalAddr() net.Addr  { return tunnelAddr{connection.address} }
 func (connection *processConn) RemoteAddr() net.Addr { return tunnelAddr{connection.address} }
 
-// StdinPipe and StdoutPipe hand back *os.File, and those support deadlines on
-// pipes — so these are real implementations, not stubs. The handshake relies
-// on them to avoid hanging forever on a tunnel that goes quiet.
+// StdinPipe and StdoutPipe hand back *os.File, and on Unix those support
+// deadlines on pipes — so these are real implementations, not stubs. On
+// Windows an anonymous pipe takes none and SetDeadline says so; handshake then
+// falls back to a timer. Either way a tunnel that goes quiet cannot hang it.
 func (connection *processConn) SetDeadline(deadline time.Time) error {
 	if err := connection.SetReadDeadline(deadline); err != nil {
 		return err

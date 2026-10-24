@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -279,10 +280,24 @@ func handshake(
 	clientConfig *ssh.ClientConfig,
 	limit time.Duration,
 ) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
-	// A conn that cannot take a deadline simply goes without one.
-	_ = connection.SetDeadline(time.Now().Add(limit))
+	// A conn that cannot take a deadline - a pipe on Windows, which the
+	// ssm-ssh tunnel is - gets the same limit from a timer that closes it
+	// instead: a Read blocked on a closed pipe returns at once.
+	timerFired := func() bool { return false }
+	if err := connection.SetDeadline(time.Now().Add(limit)); err != nil {
+		timer := time.AfterFunc(limit, func() { _ = connection.Close() })
+		// Stop reports false once the timer has gone off, or is going off:
+		// either way the connection is closed or about to be.
+		timerFired = func() bool { return !timer.Stop() }
+	}
 
 	sshConnection, channels, requests, err := ssh.NewClientConn(connection, address, clientConfig)
+	if timerFired() {
+		if err == nil {
+			_ = sshConnection.Close()
+		}
+		return nil, nil, nil, fmt.Errorf("ssh: handshake failed: %w", os.ErrDeadlineExceeded)
+	}
 	if err != nil {
 		return nil, nil, nil, err
 	}
