@@ -3,15 +3,33 @@ package transport
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/creack/pty"
 )
+
+// ptyTerminal í the controlling side of a pseudo-terminal: what the program
+// prints comes out of Read, what the user types goes in through Write.
+type ptyTerminal interface {
+	io.ReadWriteCloser
+	Resize(size Size) error
+}
+
+// ptyProcess is a program started under a pseudeo-terminal, as the two
+// system version of startUnderPTY return it: ptysession_unix.go drives
+// creack/pty, ptysession_windows.go drives ConPTY. Everything after the start
+// is the same on both, and lives here.
+type ptyProcess struct {
+	terminal ptyTerminal
+	// wait blocks until the progream exits, and says how it went.
+	wait func() error
+	// kill ends the program; it fails harmlessly if the program has gone.
+	kill func() error
+}
 
 // startPTYProcess runs a command under a local pseudo-terminal and wires it to
 // the session callbacks.
@@ -30,16 +48,13 @@ func startPTYProcess(
 	onExit func(error),
 	explain func(output string) string,
 ) (Session, error) {
-	terminal, err := pty.StartWithSize(command, &pty.Winsize{
-		Cols: size.Cols,
-		Rows: size.Rows,
-	})
+	process, err := startUnderPTY(command, size)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command.Path, err)
 	}
+	terminal := process.terminal
 
-	session := &ptySession{command: command, terminal: terminal}
-
+	session := &ptySession{process: process}
 	// Under a pty the child's stdout and stderr share one stream, so an error
 	// arrives mixed into the terminal output. Keeping the tail lets the exit
 	// handler explain what went wrong.
@@ -55,7 +70,7 @@ func startPTYProcess(
 	}()
 
 	go func() {
-		waitErr := command.Wait()
+		waitErr := process.wait()
 		userClosed := session.closedOnPurpose.Load()
 		// The process can be gone with its last words still in the pty.
 		// Closing the pty now would throw them away, and they are usually the
@@ -106,9 +121,7 @@ func pseudoTerminalEnvironment() []string {
 
 // ptySession is one child process attached to a pseudo-terminal.
 type ptySession struct {
-	command  *exec.Cmd
-	terminal *os.File
-
+	process ptyProcess
 	// closedOnPurpose separates "The user pressed Disconnected" from "the process fell over"
 	// Both end with Wait returning an error, and only the second one is worth telling anybody about.
 	closedOnPurpose atomic.Bool
@@ -116,14 +129,11 @@ type ptySession struct {
 }
 
 func (session *ptySession) Write(payload []byte) (int, error) {
-	return session.terminal.Write(payload)
+	return session.process.terminal.Write(payload)
 }
 
 func (session *ptySession) Resize(size Size) error {
-	return pty.Setsize(session.terminal, &pty.Winsize{
-		Cols: size.Cols,
-		Rows: size.Rows,
-	})
+	return session.process.terminal.Resize(size)
 }
 
 func (session *ptySession) Close() error {
@@ -133,12 +143,11 @@ func (session *ptySession) Close() error {
 		// Killing the process is what ends the session. Closing only the pty
 		// would leave it running, holding a remote session open and a process
 		// on this machine.
-		if session.command.Process != nil {
-			// Kill fails when the process has already exited, which is the
-			// ordinary case for a session the remote end ended first.
-			_ = session.command.Process.Kill()
-		}
-		closeErr = session.terminal.Close()
+		//
+		// Kill fails when the process has already exited, which is the
+		// ordinary case for a session the remote end ended first.
+		_ = session.process.kill()
+		closeErr = session.process.terminal.Close()
 	})
 	return closeErr
 }

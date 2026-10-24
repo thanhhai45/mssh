@@ -3,6 +3,7 @@ module mssh
 go 1.26.0
 
 require (
+	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
 	github.com/pkg/sftp v1.13.11
@@ -38,6 +39,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/samber/lo v1.49.1 // indirect
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
+	github.com/u-root/u-root v0.16.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
