@@ -128,13 +128,59 @@ jobs:
             build/bin/*.deb
             build/bin/*.rpm
             build/bin/*.AppImage
+  
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: NSIS
+        # See check.yml: installed only if the image lacks it.
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-progress
+          }
+          "${env:ProgramFiles(x86)}\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Build
+        run: wails build -platform window/amd64 -nsis
+
+      - name: Package
+        # Named after the tag, as the macOS files are. The zip is mssh.exe on
+        # its own, for running with installing
+        shell: pwsh
+        run: |
+          Set-Location build/bin
+          Get-ChildUtem *installer.exe |
+            Rename-Item -NewName "mssh-$env:GITHUB_REF_NAME-windows-amd64-installer.exe"
+          Compress-Archive -Path mssh.exe -DestinationPath "mssh-$env:GITHUB_REF_NAME-windows-amd64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            build/bin/*-installer.exe
+            build/bin/*.zip
+      
 
   publish:
     # One job makes the release, once every build has succeeded. Two jobs
     # uploading at the same moment can each create a release of their own, and
     # a failed Linux build must not leave a release with only the Mac files.
-    needs: [macos, linux]
+    needs: [macos, linux, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
