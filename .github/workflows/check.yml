@@ -48,6 +48,16 @@ jobs:
       - name: Vet
         run: go vet ./internal/...
 
+      - name: Windows' own ssh-agent
+        # The service ships disabled.Started, it gives the agent test the real
+        # pipe to talk to instead of a reason to skip
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-Service ssh-agent -StartupType Manual
+          Start-Service ssh-agent
+          "MSSH_TEST_WINDOWS_AGENT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Test
         # Not ./... — package main cannot compile until wails build has created
         # frontend/dist, which go:embed needs. Every test lives under internal/.
