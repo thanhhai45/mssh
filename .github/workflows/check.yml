@@ -248,7 +248,65 @@ jobs:
           cat mssh.log
           pgrep -x mssh > /dev/null
           pgrep -f WebKitWebProcess > /dev/null
+  
+  windows-build:
+    # The Windows installer, built and the used: installed sliently, the way
+    # a script or an admin would, and the app started from where it landed.
+    # There is no Windows machine to try it on by hand, so this is the try.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: NSIS
+        # wails build -nsos runs makensis. Installed only if the image lacks it.
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-pregress
+          }
+          "${env:ProgramFiles(x86)}\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Install Wails
+        # The same version as go.mod, so the CLI and the library agree.
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Build
+        run: wails build -platform windows/amd64 -nsis
+
+      - name: Installs, and starts with its web view
+        # /S is NSIS's silent install. The app has no console: it is running if
+        # its process is still there, and its web view is up if WebView2's own
+        # processes have started alongside it.
+        shell: pwsh
+        run: |
+            $installer = Get-ChildItem build/bin/*-installer.exe
+            Start-Process $installer.FullName -ArgumentList '/S' -Wait
+            $exe = "$env:ProgramFiles\HaNo\mssh\mssh.exe"
+            if (-not (Test-Path $exe)) { throw "the installer put nothing at $exe" }
+
+            $app = Start-Process $exe -PassThru
+            Start-Sleep -Seconds 20
+            Get-Process mssh, msedgewebview2 -ErrorAction SilentlyContinue |
+              Format-Table Name, Id, Path -AutoSize
+            if ($app.HasExited) { throw "mssh exited with code $($app.ExitCode)" }
+            if (-not (Get-Process msedgewebview2 -ErrorAction SilentlyContinue)) {
+              throw "mssh is running but WebView2 never started"
+            }
+            Stop-Process -Id $app.Id
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: build/bin/*-installer.exe
   frontend:
     runs-on: ubuntu-latest
     defaults:
