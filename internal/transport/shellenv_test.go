@@ -34,8 +34,11 @@ exec cat "$MSSH_FAKE_SHELL_OUTPUT"
 
 func TestMain(m *testing.M) {
 	// The fake aws is this same binary, run again: see ssm_test.go.
-	if os.Getenv(fakeAWSMode) != "" {
+	if os.Getenv(fakeAWSMode) != "" || runningAs("aws") {
 		os.Exit(runFakeAWS(os.Args[1:]))
+	}
+	if runningAs("session-manager-plugin") {
+		os.Exit(0)
 	}
 
 	directory, err := os.MkdirTemp("", "mssh-fake-shell")
@@ -56,13 +59,12 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// skipWithoutUnixShell skips a test whose fakes are #!/bin/sh scripts. Windows
-// chooses how to run a file by its extension: it reads no #! line, and
-// exec.LookPath passes over a file named plain "aws" to find the real aws.exe.
+// skipWithoutUnixShell skips a test whose fake is a #!/bin/sh script - the
+// fake login shell. Windows reads no #! line, and has no login shell to fake.
 func skipWithoutUnixShell(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("needs /bin/sh: the fake shell and the fake aws are shell scripts")
+		t.Skip("needs /bin/sh: the fake login shell is a shell script")
 	}
 }
 
