@@ -109,6 +109,30 @@ The Files drawer is not available on System SSH connections there (see
 [Connection kinds](#connection-kinds)). On a Windows on ARM machine the x64
 build runs under Windows' own emulation.
 
+### Verifying a download
+
+Releases after 1.0.0 come with a `SHA256SUMS` file. Download it next to the
+file you want to check, and look that one line up:
+
+```bash
+grep mssh_<version>_amd64.deb SHA256SUMS | sha256sum --check      # Linux
+grep mssh-v<version>-macos-universal.dmg SHA256SUMS | shasum -a 256 --check   # macOS
+```
+
+On Windows, `Get-FileHash .\mssh-v<version>-windows-amd64-installer.exe` in
+PowerShell prints the hash to compare with the line in `SHA256SUMS`.
+
+Every file also carries a build provenance attestation, signed by GitHub: it
+says the file was built by this repository's release workflow, from the tagged
+commit. With the [GitHub CLI](https://cli.github.com):
+
+```bash
+gh attestation verify mssh_<version>_amd64.deb -R thanhhai45/mssh
+```
+
+Until the installers are code-signed, this is how to tell a genuine download
+from one that was swapped on the way.
+
 ### Build from source
 
 ```bash

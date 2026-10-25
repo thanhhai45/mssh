@@ -19,7 +19,8 @@ appdir=build/AppDir
 tools=build/appimage-tools
 helpers=/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1
 
-# Pinned: a new release upstream must not change what this produces.
+# Pinned: a new release upstream must not change what this produces. Moving
+# one to another release means its sha256 below changes too.
 linuxdeploy_release=1-alpha-20251107-1
 appimage_plugin_release=1-alpha-20250213-1
 gtk_plugin_commit=7a3fbc31a9e5075073ff8790f26effbac5f84453
@@ -32,6 +33,13 @@ curl -fsSLo "$tools/linuxdeploy-plugin-appimage" \
     "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/$appimage_plugin_release/linuxdeploy-plugin-appimage-x86_64.AppImage"
 curl -fsSLo "$tools/linuxdeploy-plugin-gtk.sh" \
     "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/$gtk_plugin_commit/linuxdeploy-plugin-gtk.sh"
+# Pinned by content as well as by name: a release asset can be replaced under
+# the same tag, and these run inside the build of what every user installs.
+sha256sum --check --strict <<SUMS
+c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  $tools/linuxdeploy
+992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3  $tools/linuxdeploy-plugin-appimage
+b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171  $tools/linuxdeploy-plugin-gtk.sh
+SUMS
 chmod +x "$tools"/*
 
 # linuxdeploy looks for its plugins on PATH.

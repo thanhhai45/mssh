@@ -3,18 +3,17 @@ name: release
 on:
   push:
     tags: ['v*']
-# GITHUB_TOKEN is read-only by default. Creating a release needs write access
-# to repository contents — and nothing else.
+# Read-only for every job: the builds run third-party tools, and none of them
+# needs to write anything. Only publish is given more, below.
 permissions:
-  contents: write
+  contents: read
 jobs:
   version:
     # The macOS files are named after the tag, the Linux packages after
     # wails.json. Both have to say the same thing before anything is built.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: The tag matches wails.json
         run: |
           expected="v$(jq -r .info.productVersion wails.json)"
@@ -27,13 +26,12 @@ jobs:
     needs: version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: '1.26'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
 
@@ -63,7 +61,7 @@ jobs:
         # The same script used by hand — see docs/DMG.md.
         run: scripts/dmg.sh build/bin/mssh-${GITHUB_REF_NAME}-macos-universal.dmg
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos
           path: |
@@ -82,13 +80,12 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: '1.26'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
 
@@ -121,7 +118,7 @@ jobs:
         if: matrix.arch == 'amd64'
         run: bash build/linux/appimage.sh "$VERSION"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: linux-${{ matrix.arch }}
           path: |
@@ -133,13 +130,12 @@ jobs:
     needs: version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: '1.26'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
 
@@ -148,7 +144,7 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
-            choco install nsis -y --no-progress
+            choco install nsis --version=3.13.0 -y --no-progress
           }
           "${env:ProgramFiles(x86)}\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
 
@@ -168,7 +164,7 @@ jobs:
             Rename-Item -NewName "mssh-$env:GITHUB_REF_NAME-windows-amd64-installer.exe"
           Compress-Archive -Path mssh.exe -DestinationPath "mssh-$env:GITHUB_REF_NAME-windows-amd64.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows
           path: |
@@ -182,12 +178,35 @@ jobs:
     # a failed Linux build must not leave a release with only the Mac files.
     needs: [macos, linux, windows]
     runs-on: ubuntu-latest
+    permissions:
+      # Creating the release and attaching the files.
+      contents: write
+      # Signing the provenance below with this workflow's identity.
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - name: Checksums
+        # One line per file, for `sha256sum --check SHA256SUMS` after a
+        # download. Written beside dist first, so the glob cannot list it.
+        working-directory: dist
+        run: |
+          sha256sum * > ../SHA256SUMS
+          mv ../SHA256SUMS .
+          cat SHA256SUMS
+
+      - name: Build provenance
+        # A statement signed with this workflow's identity and recorded by
+        # GitHub: each file was built here, from this commit. Checked with
+        # `gh attestation verify <file> -R thanhhai45/mssh`.
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: dist/*
+
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: dist/*

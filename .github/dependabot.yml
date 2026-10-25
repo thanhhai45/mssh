@@ -1,0 +1,8 @@
+# The workflows pin every action to a commit, which never moves on its own.
+# Dependabot proposes the newer commit, with its release notes, once a week.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
