@@ -173,7 +173,7 @@ jobs:
       # Ubuntu would otherwise stop to ask for a time zone while installing.
       DEBIAN_FRONTEND: noninteractive
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: linux-packages-amd64
 
@@ -215,7 +215,7 @@ jobs:
       # No FUSE in a container: unpack to /tmp and run from there instead.
       APPIMAGE_EXTRACT_AND_RUN: 1
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: linux-packages-amd64
 
