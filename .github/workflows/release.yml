@@ -203,7 +203,7 @@ jobs:
         # A statement signed with this workflow's identity and recorded by
         # GitHub: each file was built here, from this commit. Checked with
         # `gh attestation verify <file> -R thanhhai45/mssh`.
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*
 
