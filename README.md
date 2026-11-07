@@ -531,3 +531,11 @@ frontend/src/
 | `this AWS profile is not allowed to run ssm:StartSession` | Add that permission to the role or user |
 | `connection ... is already open` | The session is still running; disconnect it first |
 | `this connection runs a program rather than holding an SSH connection, so it cannot browse files` | The Files drawer needs System SSH, Direct SSH or SSH over SSM. AWS SSM connections (and System SSH on Windows) run a program instead |
+
+---
+
+## License
+
+mssh is licensed under the [Apache License 2.0](LICENSE).
+
+Copyright 2026 HaNo.

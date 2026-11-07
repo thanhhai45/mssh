@@ -11,7 +11,7 @@ maintainer: thanhhai45 <thanhhai82451495@gmail.com>
 description: SSH and AWS SSM workspace manager
 vendor: HaNo
 homepage: https://github.com/thanhhai45/mssh
-license: Proprietary
+license: Apache-2.0
 
 contents:
   - src: build/bin/mssh
